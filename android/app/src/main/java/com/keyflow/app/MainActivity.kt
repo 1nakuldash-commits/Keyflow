@@ -19,8 +19,10 @@ import com.keyflow.app.service.RewriteAccessibilityService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -78,53 +80,78 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun testAndSaveBackendUrl(url: String) {
-        tvBackendStatus.text = "Testing..."
+        val trimmedUrl = url.trim()
+        val finalRewriteUrl = if (trimmedUrl.endsWith("/rewrite")) {
+            trimmedUrl
+        } else {
+            "${trimmedUrl.trimEnd('/')}/rewrite"
+        }
+
+        // ALWAYS save immediately so the user never loses their URL
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_BACKEND_URL, finalRewriteUrl)
+            .apply()
+        etBackendUrl.setText(finalRewriteUrl)
+
+        tvBackendStatus.text = "Testing connection..."
         tvBackendStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
         btnTestBackend.isEnabled = false
 
         lifecycleScope.launch {
-            val trimmedUrl = url.trim()
-            val rootUrl = if (trimmedUrl.contains("/rewrite")) {
-                trimmedUrl.substringBefore("/rewrite")
+            val rootUrl = if (finalRewriteUrl.contains("/rewrite")) {
+                finalRewriteUrl.substringBefore("/rewrite")
             } else {
-                trimmedUrl.trimEnd('/')
+                finalRewriteUrl.trimEnd('/')
             }
 
-            val finalRewriteUrl = if (trimmedUrl.endsWith("/rewrite")) {
-                trimmedUrl
-            } else {
-                "${trimmedUrl.trimEnd('/')}/rewrite"
-            }
-
-            val testResult = testConnection(rootUrl)
+            val testResult = testConnection(finalRewriteUrl, rootUrl)
             btnTestBackend.isEnabled = true
 
             if (testResult.isSuccess) {
-                // Save URL to SharedPreferences
-                getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit()
-                    .putString(KEY_BACKEND_URL, finalRewriteUrl)
-                    .apply()
-
-                etBackendUrl.setText(finalRewriteUrl)
-                tvBackendStatus.text = "Connected! (Server Online)"
+                tvBackendStatus.text = "Connected! (Server Online ✓)"
                 tvBackendStatus.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.status_green))
-                Toast.makeText(this@MainActivity, "Backend URL saved successfully!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, "Connected & saved successfully!", Toast.LENGTH_SHORT).show()
             } else {
-                tvBackendStatus.text = "Failed: ${testResult.exceptionOrNull()?.localizedMessage ?: "Unreachable"}"
-                tvBackendStatus.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_red_light))
+                val errorMsg = testResult.exceptionOrNull()?.localizedMessage ?: "Unreachable"
+                tvBackendStatus.text = "Saved! (Warning: $errorMsg)"
+                tvBackendStatus.setTextColor(ContextCompat.getColor(this@MainActivity, android.R.color.holo_orange_light))
+                Toast.makeText(this@MainActivity, "URL saved! Note: $errorMsg", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    private suspend fun testConnection(baseUrl: String): Result<Boolean> = withContext(Dispatchers.IO) {
+    private suspend fun testConnection(rewriteUrl: String, rootUrl: String): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder()
-                .url(baseUrl)
-                .get()
+            // Attempt 1: Test GET on root URL (e.g. https://xxx.vercel.app/)
+            val getRequest = Request.Builder().url(rootUrl).get().build()
+            try {
+                httpClient.newCall(getRequest).execute().use { response ->
+                    if (response.isSuccessful) {
+                        return@withContext Result.success(true)
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // Attempt 2: Test GET on /api
+            val apiRequest = Request.Builder().url("${rootUrl}/api").get().build()
+            try {
+                httpClient.newCall(apiRequest).execute().use { response ->
+                    if (response.isSuccessful) {
+                        return@withContext Result.success(true)
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // Attempt 3: Test POST directly to the /rewrite endpoint with ping payload
+            val testPayload = JSONObject().apply { put("text", "ping") }.toString()
+            val mediaType = "application/json; charset=utf-8".toMediaType()
+            val postRequest = Request.Builder()
+                .url(rewriteUrl)
+                .post(testPayload.toRequestBody(mediaType))
                 .build()
 
-            httpClient.newCall(request).execute().use { response ->
+            httpClient.newCall(postRequest).execute().use { response ->
                 if (response.isSuccessful) {
                     Result.success(true)
                 } else {

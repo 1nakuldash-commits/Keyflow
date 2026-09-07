@@ -718,7 +718,8 @@ class RewriteAccessibilityService : AccessibilityService() {
         val requestBody = payload.toString().toRequestBody(mediaType)
 
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-        val targetUrl = prefs.getString("pref_backend_url", BACKEND_URL) ?: BACKEND_URL
+        val rawUrl = prefs.getString("pref_backend_url", BACKEND_URL) ?: BACKEND_URL
+        val targetUrl = if (rawUrl.endsWith("/rewrite")) rawUrl else "${rawUrl.trimEnd('/')}/rewrite"
 
         val request = Request.Builder()
             .url(targetUrl)
