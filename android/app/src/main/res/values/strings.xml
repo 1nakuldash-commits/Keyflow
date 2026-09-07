@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Keyflow</string>
+    <string name="accessibility_service_name">Keyflow Rewrite Toolbar</string>
+    <string name="accessibility_service_description">Docks a floating toolbar above the keyboard to rewrite rough English and Hinglish into natural, polished English.</string>
+    <string name="btn_rewrite">✨ Rewrite</string>
+    <string name="title_main">Keyflow Assistant</string>
+    <string name="desc_enable_service">Enable the Accessibility Service so Keyflow can display the rewrite toolbar directly above your keyboard when typing.</string>
+    <string name="btn_open_accessibility">Enable Accessibility Service</string>
+    <string name="btn_open_overlay_settings">Grant Overlay Permission</string>
+    <string name="service_status_active">Service Status: Active</string>
+    <string name="service_status_inactive">Service Status: Inactive</string>
+</resources>

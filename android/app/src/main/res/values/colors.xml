@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Background & Glass surfaces -->
+    <color name="glass_surface">#E612141A</color>
+    <color name="glass_border">#33FFFFFF</color>
+    <color name="glass_surface_elevated">#F21A1D24</color>
+
+    <!-- Accent colors -->
+    <color name="accent_primary">#8B5CF6</color>
+    <color name="accent_primary_dark">#7C3AED</color>
+    <color name="accent_pill">#252033</color>
+    <color name="accent_pill_border">#5C4880</color>
+
+    <!-- Button states -->
+    <color name="button_bg">#232630</color>
+    <color name="button_bg_pressed">#353B4A</color>
+    <color name="button_stroke">#3D4455</color>
+
+    <!-- Text colors -->
+    <color name="text_primary">#F8FAFC</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_brand">#C4B5FD</color>
+
+    <!-- Indicators -->
+    <color name="status_green">#10B981</color>
+    <color name="status_gray">#64748B</color>
+
+    <!-- Android standard replacements -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>

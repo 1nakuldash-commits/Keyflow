@@ -1,0 +1,28 @@
+# Environment & API keys
+.env
+*.env
+.env.local
+
+# Python
+backend/venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Android & Gradle
+.gradle/
+**/.gradle/
+build/
+**/build/
+.kotlin/
+**/.kotlin/
+*.log
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
+.DS_Store
+*/.DS_Store
