@@ -83,10 +83,17 @@ class MainActivity : AppCompatActivity() {
         btnTestBackend.isEnabled = false
 
         lifecycleScope.launch {
-            val rootUrl = if (url.contains("/rewrite")) {
-                url.substringBefore("/rewrite")
+            val trimmedUrl = url.trim()
+            val rootUrl = if (trimmedUrl.contains("/rewrite")) {
+                trimmedUrl.substringBefore("/rewrite")
             } else {
-                url.trimEnd('/')
+                trimmedUrl.trimEnd('/')
+            }
+
+            val finalRewriteUrl = if (trimmedUrl.endsWith("/rewrite")) {
+                trimmedUrl
+            } else {
+                "${trimmedUrl.trimEnd('/')}/rewrite"
             }
 
             val testResult = testConnection(rootUrl)
@@ -96,9 +103,10 @@ class MainActivity : AppCompatActivity() {
                 // Save URL to SharedPreferences
                 getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     .edit()
-                    .putString(KEY_BACKEND_URL, url)
+                    .putString(KEY_BACKEND_URL, finalRewriteUrl)
                     .apply()
 
+                etBackendUrl.setText(finalRewriteUrl)
                 tvBackendStatus.text = "Connected! (Server Online)"
                 tvBackendStatus.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.status_green))
                 Toast.makeText(this@MainActivity, "Backend URL saved successfully!", Toast.LENGTH_SHORT).show()
