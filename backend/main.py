@@ -258,6 +258,11 @@ async def rewrite_with_groq(text: str, api_key: str) -> Optional[str]:
 
 @app.get("/")
 @app.get("/api")
+@app.get("/api/")
+@app.get("/rewrite")
+@app.get("/rewrite/")
+@app.get("/api/rewrite")
+@app.get("/api/rewrite/")
 async def root():
     return {
         "service": "Keyflow Rewrite API",
@@ -266,8 +271,13 @@ async def root():
         "groq_configured": bool(os.environ.get("GROQ_API_KEY"))
     }
 
+@app.post("/")
+@app.post("/api")
+@app.post("/api/")
 @app.post("/rewrite", response_model=RewriteResponse)
+@app.post("/rewrite/", response_model=RewriteResponse)
 @app.post("/api/rewrite", response_model=RewriteResponse)
+@app.post("/api/rewrite/", response_model=RewriteResponse)
 async def rewrite_text(req: RewriteRequest):
     input_text = req.text.strip()
     if not input_text:
