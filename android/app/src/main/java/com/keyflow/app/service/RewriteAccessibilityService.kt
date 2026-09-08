@@ -1,6 +1,9 @@
 package com.keyflow.app.service
 
 import android.accessibilityservice.AccessibilityService
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -21,8 +24,8 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.view.animation.DecelerateInterpolator
+import android.widget.ImageView
 import android.widget.ProgressBar
-import android.widget.TextView
 import android.widget.Toast
 import com.keyflow.app.R
 import kotlinx.coroutines.CoroutineScope
@@ -46,12 +49,13 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val TAG = "RewriteService"
         private const val BACKEND_URL = "http://10.0.2.2:8000/rewrite"
         private const val PREFS_KEYFLOW = "keyflow_prefs"
+        private const val PREF_PILL_SNAP_SIDE = "pref_pill_snap_side" // "LEFT" or "RIGHT"
         private const val PREF_PILL_X = "pref_pill_x"
         private const val PREF_PILL_Y_OFFSET = "pref_pill_y_offset"
-        private const val BADGE_HEIGHT_DP = 36
-        private const val BADGE_MARGIN_LEFT_DP = 12
-        private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 6
-        private const val LONG_PRESS_THRESHOLD_MS = 250L
+        private const val BADGE_HEIGHT_DP = 46
+        private const val BADGE_MARGIN_EDGE_DP = 14
+        private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
+        private const val LONG_PRESS_THRESHOLD_MS = 240L
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -60,8 +64,9 @@ class RewriteAccessibilityService : AccessibilityService() {
     private lateinit var windowManager: WindowManager
     private var overlayView: View? = null
     private var btnRewrite: View? = null
-    private var tvIcon: TextView? = null
+    private var ivIcon: ImageView? = null
     private var progressBar: ProgressBar? = null
+    private var snapAnimator: ValueAnimator? = null
 
     private var isOverlayAttached = false
     private var isHiding = false
@@ -90,8 +95,8 @@ class RewriteAccessibilityService : AccessibilityService() {
     private val badgeHeightPx: Int
         get() = (BADGE_HEIGHT_DP * resources.displayMetrics.density).toInt()
 
-    private val badgeMarginLeftPx: Int
-        get() = (BADGE_MARGIN_LEFT_DP * resources.displayMetrics.density).toInt()
+    private val badgeMarginEdgePx: Int
+        get() = (BADGE_MARGIN_EDGE_DP * resources.displayMetrics.density).toInt()
 
     private val badgeGapAboveKeyboardPx: Int
         get() = (BADGE_GAP_ABOVE_KEYBOARD_DP * resources.displayMetrics.density).toInt()
@@ -101,7 +106,13 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     private val overlayLayoutParams by lazy {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-        val initialX = prefs.getInt(PREF_PILL_X, badgeMarginLeftPx)
+        val savedSnapSide = prefs.getString(PREF_PILL_SNAP_SIDE, "LEFT") ?: "LEFT"
+        val screenWidth = resources.displayMetrics.widthPixels
+        val initialX = if (savedSnapSide == "RIGHT") {
+            screenWidth - badgeHeightPx - badgeMarginEdgePx
+        } else {
+            badgeMarginEdgePx
+        }
 
         WindowManager.LayoutParams().apply {
             type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
@@ -109,7 +120,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-            windowAnimations = 0 // Custom view property animations used for buttery smooth Gboard sync
+            windowAnimations = 0
             gravity = Gravity.TOP or Gravity.START
             width = WindowManager.LayoutParams.WRAP_CONTENT
             height = WindowManager.LayoutParams.WRAP_CONTENT
@@ -131,7 +142,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         val inflater = LayoutInflater.from(this)
         overlayView = inflater.inflate(R.layout.overlay_toolbar, null).apply {
             btnRewrite = findViewById(R.id.btnRewrite)
-            tvIcon = findViewById(R.id.tvIcon)
+            ivIcon = findViewById(R.id.ivIcon)
             progressBar = findViewById(R.id.progressBar)
 
             setupDragAndClickGesture(this, btnRewrite ?: this)
@@ -139,14 +150,18 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Implements Long-Press-to-Drag and Instant-Tap-to-Rewrite.
-     * Prevents accidental displacements while letting users place the pill anywhere freehand.
+     * Implements Long-Press-to-Drag with zero jump, tactile haptic feedback,
+     * smooth coordinate tracking, and Magnetic Edge Snapping on release.
      */
     private fun setupDragAndClickGesture(rootView: View, touchTarget: View) {
-        var initialParamX = 0
-        var initialParamY = 0
         var initialTouchRawX = 0f
         var initialTouchRawY = 0f
+        var lastTouchRawX = 0f
+        var lastTouchRawY = 0f
+        var dragStartParamX = 0
+        var dragStartParamY = 0
+        var dragStartRawX = 0f
+        var dragStartRawY = 0f
         var isDragging = false
         var longPressTriggered = false
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
@@ -155,23 +170,34 @@ class RewriteAccessibilityService : AccessibilityService() {
             longPressTriggered = true
             isDragging = true
             isUserDragging = true
-            // Provide haptic feedback so user knows dragging is unlocked
+
+            // Cancel any ongoing magnetic snap
+            snapAnimator?.cancel()
+
+            // Lock the exact origin at the moment drag is unlocked to prevent any jump
+            dragStartParamX = overlayLayoutParams.x
+            dragStartParamY = overlayLayoutParams.y
+            dragStartRawX = lastTouchRawX
+            dragStartRawY = lastTouchRawY
+
             touchTarget.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            // Visual scale feedback
+
+            // Tactile feedback: gently scale inner pill without affecting WindowManager bounds
             touchTarget.animate()
-                .scaleX(1.18f)
-                .scaleY(1.18f)
+                .scaleX(1.08f)
+                .scaleY(1.08f)
                 .setDuration(120)
                 .start()
         }
 
-        touchTarget.setOnTouchListener { v, event ->
+        touchTarget.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialParamX = overlayLayoutParams.x
-                    initialParamY = overlayLayoutParams.y
+                    snapAnimator?.cancel()
                     initialTouchRawX = event.rawX
                     initialTouchRawY = event.rawY
+                    lastTouchRawX = event.rawX
+                    lastTouchRawY = event.rawY
                     isDragging = false
                     isUserDragging = false
                     longPressTriggered = false
@@ -180,31 +206,42 @@ class RewriteAccessibilityService : AccessibilityService() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - initialTouchRawX
-                    val dy = event.rawY - initialTouchRawY
+                    lastTouchRawX = event.rawX
+                    lastTouchRawY = event.rawY
 
                     if (!longPressTriggered) {
-                        // If moved significantly before holding 250ms, cancel long press
-                        if (hypot(dx.toDouble(), dy.toDouble()) > touchSlop) {
+                        // Cancel long press if user moves past touch slop before threshold
+                        val moveDist = hypot((event.rawX - initialTouchRawX).toDouble(), (event.rawY - initialTouchRawY).toDouble())
+                        if (moveDist > touchSlop) {
                             mainHandler.removeCallbacks(longPressRunnable)
                         }
                     } else if (isDragging) {
+                        val dx = (event.rawX - dragStartRawX).toInt()
+                        val dy = (event.rawY - dragStartRawY).toInt()
+
                         val screenWidth = resources.displayMetrics.widthPixels
                         val screenHeight = resources.displayMetrics.heightPixels
                         val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeHeightPx
                         val viewHeight = rootView.height.takeIf { it > 0 } ?: badgeHeightPx
 
-                        val newX = (initialParamX + dx.toInt()).coerceIn(0, screenWidth - viewWidth)
-                        val newY = (initialParamY + dy.toInt()).coerceIn(0, screenHeight - viewHeight)
+                        val minX = 0
+                        val maxX = maxOf(0, screenWidth - viewWidth)
+                        val minY = (24 * resources.displayMetrics.density).toInt()
+                        val maxY = maxOf(minY, screenHeight - viewHeight)
 
-                        overlayLayoutParams.x = newX
-                        overlayLayoutParams.y = newY
+                        val newX = (dragStartParamX + dx).coerceIn(minX, maxX)
+                        val newY = (dragStartParamY + dy).coerceIn(minY, maxY)
 
-                        if (isOverlayAttached && overlayView != null) {
-                            try {
-                                windowManager.updateViewLayout(overlayView, overlayLayoutParams)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error updating dragged position", e)
+                        if (newX != overlayLayoutParams.x || newY != overlayLayoutParams.y) {
+                            overlayLayoutParams.x = newX
+                            overlayLayoutParams.y = newY
+
+                            if (isOverlayAttached && overlayView != null) {
+                                try {
+                                    windowManager.updateViewLayout(overlayView, overlayLayoutParams)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error updating dragged position", e)
+                                }
                             }
                         }
                     }
@@ -221,14 +258,26 @@ class RewriteAccessibilityService : AccessibilityService() {
                             .scaleY(1.0f)
                             .setDuration(120)
                             .start()
+
                         isDragging = false
                         isUserDragging = false
 
-                        // Save persistent position to SharedPreferences
-                        savePillPosition(overlayLayoutParams.x, overlayLayoutParams.y)
+                        // Execute Magnetic Edge Snapping
+                        val screenWidth = resources.displayMetrics.widthPixels
+                        val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeHeightPx
+                        val pillCenterX = overlayLayoutParams.x + (viewWidth / 2)
+
+                        val snapSide = if (pillCenterX < screenWidth / 2) "LEFT" else "RIGHT"
+                        val targetSnapX = if (snapSide == "LEFT") {
+                            badgeMarginEdgePx
+                        } else {
+                            maxOf(0, screenWidth - viewWidth - badgeMarginEdgePx)
+                        }
+
+                        animateSnapTo(targetSnapX, snapSide)
                     } else {
                         isUserDragging = false
-                        // Quick tap (< 250ms) -> Trigger Rewrite
+                        // Quick tap (< 240ms) -> Trigger Rewrite
                         handleRewriteClicked()
                     }
                     true
@@ -247,9 +296,66 @@ class RewriteAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun savePillPosition(currentX: Int, currentY: Int) {
+    /**
+     * Smoothly glides the pill to the Left or Right edge with balanced padding.
+     */
+    private fun animateSnapTo(targetX: Int, snapSide: String) {
+        val startX = overlayLayoutParams.x
+        val currentY = overlayLayoutParams.y
+
+        snapAnimator?.cancel()
+        snapAnimator = ValueAnimator.ofInt(startX, targetX).apply {
+            duration = 200L
+            interpolator = DecelerateInterpolator(1.5f)
+            addUpdateListener { animation ->
+                val animatedX = animation.animatedValue as Int
+                overlayLayoutParams.x = animatedX
+                if (isOverlayAttached && overlayView != null) {
+                    try {
+                        windowManager.updateViewLayout(overlayView, overlayLayoutParams)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error updating snap position", e)
+                    }
+                }
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    savePillPosition(targetX, currentY, snapSide)
+                }
+            })
+            start()
+        }
+    }
+
+    /**
+     * Retrieves the exact resting top coordinate of the visible soft keyboard window.
+     */
+    private fun getLiveKeyboardTop(): Int {
+        val windowList = windows ?: return -1
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+        var maxArea = 0
+        var bestTop = -1
+
+        for (window in windowList) {
+            if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                val b = Rect()
+                window.getBoundsInScreen(b)
+                if (b.bottom >= screenHeight - 60 && b.width() >= (screenWidth * 0.6) && b.height() > 150) {
+                    val area = b.width() * b.height()
+                    if (area > maxArea) {
+                        maxArea = area
+                        bestTop = b.top
+                    }
+                }
+            }
+        }
+        return if (bestTop > 0) bestTop else lastKnownKeyboardTop
+    }
+
+    private fun savePillPosition(currentX: Int, currentY: Int, snapSide: String) {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-        val keyboardTop = if (settledKeyboardTop > 0) settledKeyboardTop else lastKnownKeyboardTop
+        val keyboardTop = getLiveKeyboardTop()
         val yOffset = if (keyboardTop > 0) {
             currentY - keyboardTop
         } else {
@@ -257,11 +363,12 @@ class RewriteAccessibilityService : AccessibilityService() {
         }
 
         prefs.edit()
+            .putString(PREF_PILL_SNAP_SIDE, snapSide)
             .putInt(PREF_PILL_X, currentX)
             .putInt(PREF_PILL_Y_OFFSET, yOffset)
             .apply()
 
-        Log.d(TAG, "Saved freehand position: X=$currentX, YOffset=$yOffset")
+        Log.d(TAG, "Saved position: SnapSide=$snapSide, X=$currentX, YOffset=$yOffset (keyboardTop=$keyboardTop)")
     }
 
     private fun scheduleKeyboardCheck(delayMs: Long = 50L) {
@@ -285,11 +392,11 @@ class RewriteAccessibilityService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                scheduleKeyboardCheck(50L)
+                scheduleKeyboardCheck(40L)
             }
 
             AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
-                scheduleKeyboardCheck(60L)
+                scheduleKeyboardCheck(50L)
                 val source = event.source
                 if (source != null && isCandidateInputNode(source)) {
                     lastInteractedInputNode = source
@@ -300,7 +407,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
                 // User is actively typing or selecting text inside the input field.
-                // The keyboard is ALREADY open. Never re-evaluate keyboard visibility or re-animate overlay on keystrokes!
+                // Keep candidate node fresh, but do NOT reposition pill on keystrokes.
                 val source = event.source
                 if (source != null && isCandidateInputNode(source)) {
                     lastInteractedInputNode = source
@@ -325,9 +432,6 @@ class RewriteAccessibilityService : AccessibilityService() {
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
 
-        // Filter for the genuine soft keyboard window.
-        // The real keyboard docks at the screen bottom (b.bottom >= screenHeight - 60) and spans most of the screen width.
-        // This explicitly ignores key preview popups, magnifying bubbles, and floating tooltips from qwertyuiop keys!
         var mainKeyboardWindow: AccessibilityWindowInfo? = null
         var maxKeyboardArea = 0
 
@@ -354,22 +458,25 @@ class RewriteAccessibilityService : AccessibilityService() {
             if (isKeyboardOpen) {
                 cancelPendingHide()
 
-                // If overlay is already attached and positioned, LOCK IT IN PLACE!
-                // Prevents key preview popups from moving the pill up or down while typing.
-                if (isOverlayAttached && !isHiding && settledKeyboardTop > 0) {
-                    return
-                }
-
-                settledKeyboardTop = bounds.top
                 lastKnownKeyboardTop = bounds.top
 
                 val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
                 val savedYOffset = prefs.getInt(PREF_PILL_Y_OFFSET, defaultYOffsetPx)
-                val targetY = maxOf(0, bounds.top + savedYOffset)
-                val savedX = prefs.getInt(PREF_PILL_X, badgeMarginLeftPx)
+                val savedSnapSide = prefs.getString(PREF_PILL_SNAP_SIDE, "LEFT") ?: "LEFT"
+
+                val viewWidth = overlayView?.width?.takeIf { it > 0 } ?: badgeHeightPx
+                val targetX = if (savedSnapSide == "RIGHT") {
+                    maxOf(0, screenWidth - viewWidth - badgeMarginEdgePx)
+                } else {
+                    badgeMarginEdgePx
+                }
+
+                val minY = (24 * resources.displayMetrics.density).toInt()
+                val maxY = bounds.top - badgeHeightPx - (4 * resources.displayMetrics.density).toInt()
+                val targetY = (bounds.top + savedYOffset).coerceIn(minY, maxOf(minY, maxY))
 
                 lastKeyboardTopY = targetY
-                showOverlayAt(savedX, targetY)
+                showOverlayAt(targetX, targetY)
                 return
             }
         }
@@ -434,6 +541,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     private fun hideOverlaySmoothly() {
         mainHandler.removeCallbacks(keyboardCheckRunnable)
         cancelPendingHide()
+        snapAnimator?.cancel()
         val view = overlayView ?: return
 
         if (isOverlayAttached && !isHiding) {
@@ -806,7 +914,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     private fun setLoading(isLoading: Boolean) {
         progressBar?.visibility = if (isLoading) View.VISIBLE else View.GONE
-        tvIcon?.visibility = if (isLoading) View.GONE else View.VISIBLE
+        ivIcon?.visibility = if (isLoading) View.GONE else View.VISIBLE
         btnRewrite?.isEnabled = !isLoading
         btnRewrite?.alpha = if (isLoading) 0.6f else 1.0f
     }

@@ -232,7 +232,7 @@ async def rewrite_with_gemini(text: str, api_key: str) -> Optional[str]:
 
 async def rewrite_with_groq(text: str, api_key: str) -> Optional[str]:
     """Calls Groq API via standard HTTP endpoint."""
-    prompt = SYSTEM_PROMPT_TEMPLATE.format(text=text)
+    prompt = f"{SYSTEM_INSTRUCTION}\n\nRewrite this text into natural, clean English:\n{text}"
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",

@@ -6,37 +6,36 @@
     android:clickable="true"
     android:focusable="false">
 
-    <!-- Compact Floating AI Pill (36dp height, does not block typing area) -->
+    <!-- Floating AI Pill (46dp height, sleek glassmorphic capsule) -->
     <LinearLayout
         android:id="@+id/btnRewrite"
         android:layout_width="wrap_content"
-        android:layout_height="36dp"
+        android:layout_height="46dp"
+        android:minWidth="46dp"
         android:orientation="horizontal"
         android:gravity="center"
         android:background="@drawable/bg_floating_ai_pill"
-        android:elevation="10dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp">
+        android:elevation="12dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp">
 
         <!-- Progress Spinner (Shown during API call) -->
         <ProgressBar
             android:id="@+id/progressBar"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:indeterminate="true"
-            android:indeterminateTint="@color/accent_primary"
+            android:indeterminateTint="#38BDF8"
             android:visibility="gone" />
 
-        <!-- AI Sparkle Icon / Badge -->
-        <TextView
-            android:id="@+id/tvIcon"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="✨"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp"
-            android:fontFamily="sans-serif-medium"
-            android:gravity="center" />
+        <!-- Keyflow Emblem Logo -->
+        <ImageView
+            android:id="@+id/ivIcon"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_keyflow_emblem"
+            android:contentDescription="@string/app_name"
+            android:visibility="visible" />
 
     </LinearLayout>
 

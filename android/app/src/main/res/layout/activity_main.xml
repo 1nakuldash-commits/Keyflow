@@ -8,6 +8,13 @@
     android:padding="24dp">
 
     <!-- Header / Brand -->
+    <ImageView
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_marginBottom="12dp"
+        android:src="@drawable/ic_keyflow_logo"
+        android:contentDescription="@string/app_name" />
+
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
