@@ -7,6 +7,7 @@ import android.animation.ValueAnimator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Outline
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Bundle
@@ -20,6 +21,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -53,12 +55,12 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val PREF_PILL_SNAP_SIDE = "pref_pill_snap_side" // "LEFT" or "RIGHT"
         private const val PREF_PILL_X = "pref_pill_x"
         private const val PREF_PILL_Y_OFFSET = "pref_pill_y_offset"
-        private const val PREF_RESTING_KB_HEIGHT = "pref_resting_kb_height"
         private const val BADGE_SIZE_DP = 44
+        private const val ROOT_PADDING_DP = 8
         private const val BADGE_MARGIN_EDGE_DP = 6 // Clean 6dp spacing hugging screen edge
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 240L
-        private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 140
+        private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -78,7 +80,6 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var lastKnownKeyboardTop = -1
     private var activeDockedKeyboardTop = -1
     private var lastInteractedInputNode: AccessibilityNodeInfo? = null
-    private var lastTypingEventTime = 0L
 
     private val keyboardCheckRunnable = Runnable {
         evaluateKeyboardVisibility()
@@ -99,6 +100,9 @@ class RewriteAccessibilityService : AccessibilityService() {
     private val badgeSizePx: Int
         get() = (BADGE_SIZE_DP * resources.displayMetrics.density).toInt()
 
+    private val rootPaddingPx: Int
+        get() = (ROOT_PADDING_DP * resources.displayMetrics.density).toInt()
+
     private val badgeMarginEdgePx: Int
         get() = (BADGE_MARGIN_EDGE_DP * resources.displayMetrics.density).toInt()
 
@@ -113,9 +117,9 @@ class RewriteAccessibilityService : AccessibilityService() {
         val savedSnapSide = prefs.getString(PREF_PILL_SNAP_SIDE, "LEFT") ?: "LEFT"
         val screenWidth = resources.displayMetrics.widthPixels
         val initialX = if (savedSnapSide == "RIGHT") {
-            screenWidth - badgeSizePx - badgeMarginEdgePx
+            screenWidth - badgeSizePx - badgeMarginEdgePx - rootPaddingPx
         } else {
-            badgeMarginEdgePx
+            badgeMarginEdgePx - rootPaddingPx
         }
 
         WindowManager.LayoutParams().apply {
@@ -148,6 +152,13 @@ class RewriteAccessibilityService : AccessibilityService() {
             btnRewrite = findViewById(R.id.btnRewrite)
             ivIcon = findViewById(R.id.ivIcon)
             progressBar = findViewById(R.id.progressBar)
+
+            btnRewrite?.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) {
+                    outline.setOval(0, 0, view.width, view.height)
+                }
+            }
+            btnRewrite?.clipToOutline = true
 
             setupDragAndClickGesture(this, btnRewrite ?: this)
         }
@@ -186,7 +197,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
             touchTarget.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
 
-            // Tactile feedback: gently scale inner circular pill
+            // Tactile feedback: gently scale inner circular pill without clipping
             touchTarget.animate()
                 .scaleX(1.08f)
                 .scaleY(1.08f)
@@ -225,13 +236,13 @@ class RewriteAccessibilityService : AccessibilityService() {
 
                         val screenWidth = resources.displayMetrics.widthPixels
                         val screenHeight = resources.displayMetrics.heightPixels
-                        val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeSizePx
-                        val viewHeight = rootView.height.takeIf { it > 0 } ?: badgeSizePx
+                        val totalViewWidth = rootView.width.takeIf { it > 0 } ?: (badgeSizePx + 2 * rootPaddingPx)
+                        val totalViewHeight = rootView.height.takeIf { it > 0 } ?: (badgeSizePx + 2 * rootPaddingPx)
 
-                        val minX = 0
-                        val maxX = maxOf(0, screenWidth - viewWidth)
-                        val minY = (24 * resources.displayMetrics.density).toInt()
-                        val maxY = maxOf(minY, screenHeight - viewHeight)
+                        val minX = -rootPaddingPx
+                        val maxX = maxOf(0, screenWidth - totalViewWidth + rootPaddingPx)
+                        val minY = (24 * resources.displayMetrics.density).toInt() - rootPaddingPx
+                        val maxY = maxOf(minY, screenHeight - totalViewHeight)
 
                         val newX = (dragStartParamX + dx).coerceIn(minX, maxX)
                         val newY = (dragStartParamY + dy).coerceIn(minY, maxY)
@@ -268,14 +279,14 @@ class RewriteAccessibilityService : AccessibilityService() {
 
                         // Execute Magnetic Edge Snapping with reduced edge margin (6dp)
                         val screenWidth = resources.displayMetrics.widthPixels
-                        val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeSizePx
-                        val pillCenterX = overlayLayoutParams.x + (viewWidth / 2)
+                        val totalViewWidth = rootView.width.takeIf { it > 0 } ?: (badgeSizePx + 2 * rootPaddingPx)
+                        val pillCenterX = overlayLayoutParams.x + (totalViewWidth / 2)
 
                         val snapSide = if (pillCenterX < screenWidth / 2) "LEFT" else "RIGHT"
                         val targetSnapX = if (snapSide == "LEFT") {
-                            badgeMarginEdgePx
+                            badgeMarginEdgePx - rootPaddingPx
                         } else {
-                            maxOf(0, screenWidth - viewWidth - badgeMarginEdgePx)
+                            screenWidth - badgeSizePx - badgeMarginEdgePx - rootPaddingPx
                         }
 
                         animateSnapTo(targetSnapX, snapSide)
@@ -331,46 +342,21 @@ class RewriteAccessibilityService : AccessibilityService() {
         }
     }
 
-    /**
-     * Retrieves the exact resting top coordinate of the visible soft keyboard window.
-     */
-    private fun getLiveKeyboardTop(): Int {
-        val windowList = windows ?: return -1
-        val screenWidth = resources.displayMetrics.widthPixels
-        val screenHeight = resources.displayMetrics.heightPixels
-        var maxArea = 0
-        var bestTop = -1
-
-        for (window in windowList) {
-            if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
-                val b = Rect()
-                window.getBoundsInScreen(b)
-                if (b.bottom >= screenHeight - 60 && b.width() >= (screenWidth * 0.6) && b.height() > 150) {
-                    val area = b.width() * b.height()
-                    if (area > maxArea) {
-                        maxArea = area
-                        bestTop = b.top
-                    }
-                }
-            }
-        }
-        return if (bestTop > 0) bestTop else lastKnownKeyboardTop
-    }
-
     private fun savePillPosition(currentX: Int, currentY: Int, snapSide: String) {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-        val keyboardTop = getLiveKeyboardTop()
-        val screenHeight = resources.displayMetrics.heightPixels
+        val keyboardTop = lastKnownKeyboardTop
+        val currentVisibleY = currentY + rootPaddingPx
 
-        val yOffset: Int
-        if (keyboardTop > 0) {
-            yOffset = currentY - keyboardTop
-            val restingKbHeight = screenHeight - keyboardTop
-            if (restingKbHeight in (screenHeight * 0.2f).toInt()..(screenHeight * 0.65f).toInt()) {
-                prefs.edit().putInt(PREF_RESTING_KB_HEIGHT, restingKbHeight).apply()
+        val yOffset = if (keyboardTop > 0) {
+            val offset = currentVisibleY - keyboardTop
+            val screenHeight = resources.displayMetrics.heightPixels
+            if (offset in -(screenHeight * 0.7f).toInt()..-10) {
+                offset
+            } else {
+                defaultYOffsetPx
             }
         } else {
-            yOffset = defaultYOffsetPx
+            defaultYOffsetPx
         }
 
         prefs.edit()
@@ -397,18 +383,19 @@ class RewriteAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacks(hideOverlayRunnable)
     }
 
+    private fun updateLastInteractedNode(newNode: AccessibilityNodeInfo) {
+        if (lastInteractedInputNode != newNode) {
+            lastInteractedInputNode?.recycle()
+            lastInteractedInputNode = newNode
+        }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                // If user was typing within the last 700ms, ignore window changes!
-                // This completely eliminates the top-row key popup ("QWERTYUIOP{}|") jumping bug!
-                val now = SystemClock.uptimeMillis()
-                if (now - lastTypingEventTime < 700L) {
-                    return
-                }
                 scheduleKeyboardCheck(40L)
             }
 
@@ -416,18 +403,26 @@ class RewriteAccessibilityService : AccessibilityService() {
                 scheduleKeyboardCheck(50L)
                 val source = event.source
                 if (source != null && isCandidateInputNode(source)) {
-                    lastInteractedInputNode = source
+                    updateLastInteractedNode(source)
                 }
             }
 
-            AccessibilityEvent.TYPE_VIEW_CLICKED,
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
+                // Tapping on an input field commonly opens the keyboard
+                scheduleKeyboardCheck(60L)
+                val source = event.source
+                if (source != null && isCandidateInputNode(source)) {
+                    updateLastInteractedNode(source)
+                }
+            }
+
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
                 // User is actively typing or selecting text inside the input field.
-                lastTypingEventTime = SystemClock.uptimeMillis()
+                // Do NOT schedule keyboard check on keystrokes to prevent any overlay jumps.
                 val source = event.source
                 if (source != null && isCandidateInputNode(source)) {
-                    lastInteractedInputNode = source
+                    updateLastInteractedNode(source)
                 }
             }
         }
@@ -456,7 +451,8 @@ class RewriteAccessibilityService : AccessibilityService() {
             if (window.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
                 val b = Rect()
                 window.getBoundsInScreen(b)
-                if (b.bottom >= screenHeight - 60 && b.width() >= (screenWidth * 0.6) && b.height() > 150) {
+                // Filter for genuine soft keyboard window: reasonable width and height on screen
+                if (b.height() > 120 && b.width() >= (screenWidth * 0.4) && b.top < screenHeight && b.bottom > 0) {
                     val area = b.width() * b.height()
                     if (area > maxKeyboardArea) {
                         maxKeyboardArea = area
@@ -470,51 +466,38 @@ class RewriteAccessibilityService : AccessibilityService() {
             val bounds = Rect()
             mainKeyboardWindow.getBoundsInScreen(bounds)
 
-            val isKeyboardOpen = bounds.height() > 100 && bounds.top < screenHeight && bounds.top > 0
+            val isKeyboardOpen = bounds.height() > 120 && bounds.top < screenHeight && bounds.top > 0
 
             if (isKeyboardOpen) {
                 cancelPendingHide()
 
-                // If already docked, ignore transient popups (< 140px, e.g. top-row key popups)
+                // If already attached, visible, and settled at this keyboard top (or small key popup delta < 120px):
+                // DO NOT reposition or animate! Lock it firmly in place!
                 if (isOverlayAttached && !isHiding && activeDockedKeyboardTop > 0) {
                     if (Math.abs(bounds.top - activeDockedKeyboardTop) < KEY_PREVIEW_IGNORE_THRESHOLD_PX) {
                         return
                     }
                 }
 
+                activeDockedKeyboardTop = bounds.top
+                lastKnownKeyboardTop = bounds.top
+
                 val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-                val defaultKbHeight = (screenHeight * 0.36f).toInt()
-                val restingKbHeight = prefs.getInt(PREF_RESTING_KB_HEIGHT, defaultKbHeight)
-
-                // Ground to the known resting keyboard top for instant cross-app consistency
-                val expectedRestingTop = screenHeight - restingKbHeight
-                val effectiveKeyboardTop = if (bounds.top <= expectedRestingTop + 80) {
-                    bounds.top
-                } else {
-                    expectedRestingTop
+                var savedYOffset = prefs.getInt(PREF_PILL_Y_OFFSET, defaultYOffsetPx)
+                if (savedYOffset >= -10 || savedYOffset < -(screenHeight * 0.7f)) {
+                    savedYOffset = defaultYOffsetPx
                 }
 
-                activeDockedKeyboardTop = effectiveKeyboardTop
-                lastKnownKeyboardTop = effectiveKeyboardTop
-
-                // Save updated resting height once fully at rest
-                val measuredHeight = screenHeight - bounds.top
-                if (measuredHeight in (screenHeight * 0.2f).toInt()..(screenHeight * 0.65f).toInt()) {
-                    prefs.edit().putInt(PREF_RESTING_KB_HEIGHT, measuredHeight).apply()
-                }
-
-                val savedYOffset = prefs.getInt(PREF_PILL_Y_OFFSET, defaultYOffsetPx)
                 val savedSnapSide = prefs.getString(PREF_PILL_SNAP_SIDE, "LEFT") ?: "LEFT"
-
                 val targetX = if (savedSnapSide == "RIGHT") {
-                    maxOf(0, screenWidth - badgeSizePx - badgeMarginEdgePx)
+                    screenWidth - badgeSizePx - badgeMarginEdgePx - rootPaddingPx
                 } else {
-                    badgeMarginEdgePx
+                    badgeMarginEdgePx - rootPaddingPx
                 }
 
-                val minY = (24 * resources.displayMetrics.density).toInt()
-                val maxY = effectiveKeyboardTop - badgeSizePx - (4 * resources.displayMetrics.density).toInt()
-                val targetY = (effectiveKeyboardTop + savedYOffset).coerceIn(minY, maxOf(minY, maxY))
+                val minY = (24 * resources.displayMetrics.density).toInt() - rootPaddingPx
+                val maxY = bounds.top - badgeSizePx - (4 * resources.displayMetrics.density).toInt() - rootPaddingPx
+                val targetY = (bounds.top + savedYOffset - rootPaddingPx).coerceIn(minY, maxOf(minY, maxY))
 
                 lastKeyboardTopY = targetY
                 showOverlayAt(targetX, targetY)
@@ -758,50 +741,63 @@ class RewriteAccessibilityService : AccessibilityService() {
         }
 
         if (candidates.isNotEmpty()) {
-            // Priority 5A: Focused candidate with non-empty text
-            candidates.firstOrNull { it.isFocused && extractTextFromNode(it).isNotEmpty() }?.let {
-                Log.d(TAG, "Tier 5A: Found focused candidate with text: '${extractTextFromNode(it)}'")
-                return it
-            }
-
-            // Priority 5B: Any candidate reporting isFocused == true
-            candidates.firstOrNull { it.isFocused }?.let {
-                Log.d(TAG, "Tier 5B: Found focused candidate: ${it.className}")
-                return it
-            }
-
-            // Priority 5C: Proximity to keyboard top (ChatGPT input sits directly above soft keyboard)
-            if (lastKnownKeyboardTop > 0) {
-                val candidatesAboveKeyboard = candidates.map { node ->
-                    val rect = Rect()
-                    node.getBoundsInScreen(rect)
-                    Pair(node, rect)
-                }.filter { (_, rect) ->
-                    rect.bottom <= lastKnownKeyboardTop + 150 && rect.top < lastKnownKeyboardTop
+            val chosen = when {
+                // Priority 5A: Focused candidate with non-empty text
+                candidates.any { it.isFocused && extractTextFromNode(it).isNotEmpty() } -> {
+                    val match = candidates.first { it.isFocused && extractTextFromNode(it).isNotEmpty() }
+                    Log.d(TAG, "Tier 5A: Found focused candidate with text: '${extractTextFromNode(match)}'")
+                    match
                 }
 
-                // Prefer one that has user text entered
-                val withText = candidatesAboveKeyboard.firstOrNull { extractTextFromNode(it.first).isNotEmpty() }
-                if (withText != null) {
-                    Log.d(TAG, "Tier 5C: Found candidate above keyboard with text: '${extractTextFromNode(withText.first)}'")
-                    return withText.first
+                // Priority 5B: Any candidate reporting isFocused == true
+                candidates.any { it.isFocused } -> {
+                    val match = candidates.first { it.isFocused }
+                    Log.d(TAG, "Tier 5B: Found focused candidate: ${match.className}")
+                    match
                 }
 
-                // Or the one closest to the keyboard top
-                candidatesAboveKeyboard.maxByOrNull { it.second.bottom }?.let {
-                    Log.d(TAG, "Tier 5C: Found candidate closest to keyboard top at Y=${it.second.bottom}")
-                    return it.first
+                // Priority 5C: Proximity to keyboard top (ChatGPT input sits directly above soft keyboard)
+                lastKnownKeyboardTop > 0 -> {
+                    val candidatesAboveKeyboard = candidates.map { node ->
+                        val rect = Rect()
+                        node.getBoundsInScreen(rect)
+                        Pair(node, rect)
+                    }.filter { (_, rect) ->
+                        rect.bottom <= lastKnownKeyboardTop + 150 && rect.top < lastKnownKeyboardTop
+                    }
+
+                    val withText = candidatesAboveKeyboard.firstOrNull { extractTextFromNode(it.first).isNotEmpty() }
+                    if (withText != null) {
+                        Log.d(TAG, "Tier 5C: Found candidate above keyboard with text: '${extractTextFromNode(withText.first)}'")
+                        withText.first
+                    } else {
+                        val closest = candidatesAboveKeyboard.maxByOrNull { it.second.bottom }
+                        if (closest != null) {
+                            Log.d(TAG, "Tier 5C: Found candidate closest to keyboard top at Y=${closest.second.bottom}")
+                            closest.first
+                        } else {
+                            candidates.firstOrNull { extractTextFromNode(it).isNotEmpty() } ?: candidates.first()
+                        }
+                    }
+                }
+
+                // Priority 5D: Any candidate with text
+                candidates.any { extractTextFromNode(it).isNotEmpty() } -> {
+                    val match = candidates.first { extractTextFromNode(it).isNotEmpty() }
+                    Log.d(TAG, "Tier 5D: Found candidate with non-empty text: '${extractTextFromNode(match)}'")
+                    match
+                }
+
+                // Fallback: First candidate
+                else -> candidates.first()
+            }
+
+            for (node in candidates) {
+                if (node != chosen) {
+                    node.recycle()
                 }
             }
-
-            // Priority 5D: Any candidate with text
-            candidates.firstOrNull { extractTextFromNode(it).isNotEmpty() }?.let {
-                Log.d(TAG, "Tier 5D: Found candidate with non-empty text: '${extractTextFromNode(it)}'")
-                return it
-            }
-
-            // Fallback: First candidate
-            return candidates.first()
+            return chosen
         }
 
         // Fallback: Tracked node even if empty
@@ -963,11 +959,15 @@ class RewriteAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         Log.w(TAG, "Keyflow RewriteAccessibilityService interrupted")
         hideOverlaySmoothly()
+        lastInteractedInputNode?.recycle()
+        lastInteractedInputNode = null
     }
 
     override fun onDestroy() {
         super.onDestroy()
         hideOverlaySmoothly()
+        lastInteractedInputNode?.recycle()
+        lastInteractedInputNode = null
         serviceScope.cancel()
         Log.d(TAG, "Keyflow RewriteAccessibilityService destroyed")
     }

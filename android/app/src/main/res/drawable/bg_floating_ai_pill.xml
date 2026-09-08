@@ -4,6 +4,9 @@
     <item>
         <shape android:shape="oval">
             <solid android:color="#F70D111A" />
+            <stroke
+                android:width="1dp"
+                android:color="#3381C5FF" />
         </shape>
     </item>
 </ripple>
