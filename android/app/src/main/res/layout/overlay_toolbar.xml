@@ -6,24 +6,20 @@
     android:clickable="true"
     android:focusable="false">
 
-    <!-- Floating AI Pill (46dp height, sleek glassmorphic capsule) -->
-    <LinearLayout
+    <!-- 1:1 Circular Floating AI Pill (44dp x 44dp, stroke-free) -->
+    <FrameLayout
         android:id="@+id/btnRewrite"
-        android:layout_width="wrap_content"
-        android:layout_height="46dp"
-        android:minWidth="46dp"
-        android:orientation="horizontal"
-        android:gravity="center"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
         android:background="@drawable/bg_floating_ai_pill"
-        android:elevation="12dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp">
+        android:elevation="12dp">
 
         <!-- Progress Spinner (Shown during API call) -->
         <ProgressBar
             android:id="@+id/progressBar"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_gravity="center"
             android:indeterminate="true"
             android:indeterminateTint="#38BDF8"
             android:visibility="gone" />
@@ -31,12 +27,13 @@
         <!-- Keyflow Emblem Logo -->
         <ImageView
             android:id="@+id/ivIcon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="center"
             android:src="@drawable/ic_keyflow_emblem"
             android:contentDescription="@string/app_name"
             android:visibility="visible" />
 
-    </LinearLayout>
+    </FrameLayout>
 
 </FrameLayout>

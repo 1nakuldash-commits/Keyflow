@@ -12,6 +12,7 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -52,10 +53,12 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val PREF_PILL_SNAP_SIDE = "pref_pill_snap_side" // "LEFT" or "RIGHT"
         private const val PREF_PILL_X = "pref_pill_x"
         private const val PREF_PILL_Y_OFFSET = "pref_pill_y_offset"
-        private const val BADGE_HEIGHT_DP = 46
-        private const val BADGE_MARGIN_EDGE_DP = 14
+        private const val PREF_RESTING_KB_HEIGHT = "pref_resting_kb_height"
+        private const val BADGE_SIZE_DP = 44
+        private const val BADGE_MARGIN_EDGE_DP = 6 // Clean 6dp spacing hugging screen edge
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 240L
+        private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 140
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -73,8 +76,9 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var isUserDragging = false
     private var lastKeyboardTopY = -1
     private var lastKnownKeyboardTop = -1
-    private var settledKeyboardTop = -1
+    private var activeDockedKeyboardTop = -1
     private var lastInteractedInputNode: AccessibilityNodeInfo? = null
+    private var lastTypingEventTime = 0L
 
     private val keyboardCheckRunnable = Runnable {
         evaluateKeyboardVisibility()
@@ -92,8 +96,8 @@ class RewriteAccessibilityService : AccessibilityService() {
             .build()
     }
 
-    private val badgeHeightPx: Int
-        get() = (BADGE_HEIGHT_DP * resources.displayMetrics.density).toInt()
+    private val badgeSizePx: Int
+        get() = (BADGE_SIZE_DP * resources.displayMetrics.density).toInt()
 
     private val badgeMarginEdgePx: Int
         get() = (BADGE_MARGIN_EDGE_DP * resources.displayMetrics.density).toInt()
@@ -102,14 +106,14 @@ class RewriteAccessibilityService : AccessibilityService() {
         get() = (BADGE_GAP_ABOVE_KEYBOARD_DP * resources.displayMetrics.density).toInt()
 
     private val defaultYOffsetPx: Int
-        get() = -(badgeHeightPx + badgeGapAboveKeyboardPx)
+        get() = -(badgeSizePx + badgeGapAboveKeyboardPx)
 
     private val overlayLayoutParams by lazy {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
         val savedSnapSide = prefs.getString(PREF_PILL_SNAP_SIDE, "LEFT") ?: "LEFT"
         val screenWidth = resources.displayMetrics.widthPixels
         val initialX = if (savedSnapSide == "RIGHT") {
-            screenWidth - badgeHeightPx - badgeMarginEdgePx
+            screenWidth - badgeSizePx - badgeMarginEdgePx
         } else {
             badgeMarginEdgePx
         }
@@ -182,7 +186,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
             touchTarget.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
 
-            // Tactile feedback: gently scale inner pill without affecting WindowManager bounds
+            // Tactile feedback: gently scale inner circular pill
             touchTarget.animate()
                 .scaleX(1.08f)
                 .scaleY(1.08f)
@@ -221,8 +225,8 @@ class RewriteAccessibilityService : AccessibilityService() {
 
                         val screenWidth = resources.displayMetrics.widthPixels
                         val screenHeight = resources.displayMetrics.heightPixels
-                        val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeHeightPx
-                        val viewHeight = rootView.height.takeIf { it > 0 } ?: badgeHeightPx
+                        val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeSizePx
+                        val viewHeight = rootView.height.takeIf { it > 0 } ?: badgeSizePx
 
                         val minX = 0
                         val maxX = maxOf(0, screenWidth - viewWidth)
@@ -262,9 +266,9 @@ class RewriteAccessibilityService : AccessibilityService() {
                         isDragging = false
                         isUserDragging = false
 
-                        // Execute Magnetic Edge Snapping
+                        // Execute Magnetic Edge Snapping with reduced edge margin (6dp)
                         val screenWidth = resources.displayMetrics.widthPixels
-                        val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeHeightPx
+                        val viewWidth = rootView.width.takeIf { it > 0 } ?: badgeSizePx
                         val pillCenterX = overlayLayoutParams.x + (viewWidth / 2)
 
                         val snapSide = if (pillCenterX < screenWidth / 2) "LEFT" else "RIGHT"
@@ -356,10 +360,17 @@ class RewriteAccessibilityService : AccessibilityService() {
     private fun savePillPosition(currentX: Int, currentY: Int, snapSide: String) {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
         val keyboardTop = getLiveKeyboardTop()
-        val yOffset = if (keyboardTop > 0) {
-            currentY - keyboardTop
+        val screenHeight = resources.displayMetrics.heightPixels
+
+        val yOffset: Int
+        if (keyboardTop > 0) {
+            yOffset = currentY - keyboardTop
+            val restingKbHeight = screenHeight - keyboardTop
+            if (restingKbHeight in (screenHeight * 0.2f).toInt()..(screenHeight * 0.65f).toInt()) {
+                prefs.edit().putInt(PREF_RESTING_KB_HEIGHT, restingKbHeight).apply()
+            }
         } else {
-            defaultYOffsetPx
+            yOffset = defaultYOffsetPx
         }
 
         prefs.edit()
@@ -392,6 +403,12 @@ class RewriteAccessibilityService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOWS_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                // If user was typing within the last 700ms, ignore window changes!
+                // This completely eliminates the top-row key popup ("QWERTYUIOP{}|") jumping bug!
+                val now = SystemClock.uptimeMillis()
+                if (now - lastTypingEventTime < 700L) {
+                    return
+                }
                 scheduleKeyboardCheck(40L)
             }
 
@@ -407,7 +424,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
             AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
                 // User is actively typing or selecting text inside the input field.
-                // Keep candidate node fresh, but do NOT reposition pill on keystrokes.
+                lastTypingEventTime = SystemClock.uptimeMillis()
                 val source = event.source
                 if (source != null && isCandidateInputNode(source)) {
                     lastInteractedInputNode = source
@@ -418,7 +435,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     /**
      * Inspects window hierarchy to detect the soft keyboard (TYPE_INPUT_METHOD)
-     * and positions the floating AI pill relative to the keyboard top.
+     * and positions the floating AI pill consistently above the keyboard across all apps.
      */
     private fun evaluateKeyboardVisibility() {
         if (isUserDragging) return
@@ -458,22 +475,46 @@ class RewriteAccessibilityService : AccessibilityService() {
             if (isKeyboardOpen) {
                 cancelPendingHide()
 
-                lastKnownKeyboardTop = bounds.top
+                // If already docked, ignore transient popups (< 140px, e.g. top-row key popups)
+                if (isOverlayAttached && !isHiding && activeDockedKeyboardTop > 0) {
+                    if (Math.abs(bounds.top - activeDockedKeyboardTop) < KEY_PREVIEW_IGNORE_THRESHOLD_PX) {
+                        return
+                    }
+                }
 
                 val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
+                val defaultKbHeight = (screenHeight * 0.36f).toInt()
+                val restingKbHeight = prefs.getInt(PREF_RESTING_KB_HEIGHT, defaultKbHeight)
+
+                // Ground to the known resting keyboard top for instant cross-app consistency
+                val expectedRestingTop = screenHeight - restingKbHeight
+                val effectiveKeyboardTop = if (bounds.top <= expectedRestingTop + 80) {
+                    bounds.top
+                } else {
+                    expectedRestingTop
+                }
+
+                activeDockedKeyboardTop = effectiveKeyboardTop
+                lastKnownKeyboardTop = effectiveKeyboardTop
+
+                // Save updated resting height once fully at rest
+                val measuredHeight = screenHeight - bounds.top
+                if (measuredHeight in (screenHeight * 0.2f).toInt()..(screenHeight * 0.65f).toInt()) {
+                    prefs.edit().putInt(PREF_RESTING_KB_HEIGHT, measuredHeight).apply()
+                }
+
                 val savedYOffset = prefs.getInt(PREF_PILL_Y_OFFSET, defaultYOffsetPx)
                 val savedSnapSide = prefs.getString(PREF_PILL_SNAP_SIDE, "LEFT") ?: "LEFT"
 
-                val viewWidth = overlayView?.width?.takeIf { it > 0 } ?: badgeHeightPx
                 val targetX = if (savedSnapSide == "RIGHT") {
-                    maxOf(0, screenWidth - viewWidth - badgeMarginEdgePx)
+                    maxOf(0, screenWidth - badgeSizePx - badgeMarginEdgePx)
                 } else {
                     badgeMarginEdgePx
                 }
 
                 val minY = (24 * resources.displayMetrics.density).toInt()
-                val maxY = bounds.top - badgeHeightPx - (4 * resources.displayMetrics.density).toInt()
-                val targetY = (bounds.top + savedYOffset).coerceIn(minY, maxOf(minY, maxY))
+                val maxY = effectiveKeyboardTop - badgeSizePx - (4 * resources.displayMetrics.density).toInt()
+                val targetY = (effectiveKeyboardTop + savedYOffset).coerceIn(minY, maxOf(minY, maxY))
 
                 lastKeyboardTopY = targetY
                 showOverlayAt(targetX, targetY)
@@ -561,7 +602,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                             isOverlayAttached = false
                             isHiding = false
                             lastKeyboardTopY = -1
-                            settledKeyboardTop = -1
+                            activeDockedKeyboardTop = -1
                         }
                     }
                 }
