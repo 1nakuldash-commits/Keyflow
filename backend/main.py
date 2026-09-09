@@ -43,8 +43,8 @@ load_env_file()
 
 app = FastAPI(
     title="Keyflow Rewrite API",
-    description="Backend service for Keyflow Android Accessibility Rewrite Toolbar",
-    version="1.0.0"
+    description="Multi-model AI backend supporting Groq & Gemini with 4 rewrite tones",
+    version="2.0.0"
 )
 
 # Enable CORS for all origins
@@ -58,111 +58,169 @@ app.add_middleware(
 
 class RewriteRequest(BaseModel):
     text: str
+    tone: Optional[str] = "simple"  # "simple", "formal", "professional", "email"
 
 class RewriteResponse(BaseModel):
     rewritten_text: str
-    provider: Optional[str] = "gemini"
+    provider: Optional[str] = "groq"
+    tone: Optional[str] = "simple"
 
-SYSTEM_INSTRUCTION = (
-    "You are an expert bilingual AI text-rewriting engine for a mobile keyboard.\n"
-    "The user writes rough English, typos, slang, or Hinglish (Hindi written in Roman/Latin script).\n"
-    "Your job is to rewrite the input into clean, natural, fluent, and grammatically correct English.\n\n"
-    "STRICT RULES:\n"
-    "1. Completely translate all Hinglish/Hindi words into proper English (e.g. 'Mughe kuch chize thumhe se jaanna tha' -> 'I wanted to know a few things from you').\n"
-    "2. FULL LENGTH PRESERVATION: Handle short phrases, multi-sentence messages, and long paragraphs (20 to 50+ words). Never drop or truncate any thoughts or sentences.\n"
-    "3. Correct all spelling mistakes, typos, and broken phrasing.\n"
-    "4. Keep the natural conversational tone (casual for chat, polite for questions).\n"
-    "5. Output ONLY the rewritten English text. Never output Hindi words in the result.\n"
-    "6. Do NOT add quotation marks, explanations, notes, or prefixes like 'Output:'.\n\n"
-    "FEW-SHOT EXAMPLES:\n"
-    "Input: Mughe kuch chize thumhe se jaanna tha.\n"
-    "Output: I wanted to know a few things from you.\n\n"
-    "Input: Hey bro kaha per rahe gaye im weighting for you\n"
-    "Output: Hey bro, where are you? I'm waiting for you.\n\n"
-    "Input: bhaikab aroge im weatign for you\n"
-    "Output: Brother, when will you arrive? I'm waiting for you.\n\n"
-    "Input: bhai kal subah meeting me aoge kya? mai soch raha tha ki project ka presentation finalize kar lete hai\n"
-    "Output: Bro, will you come to the meeting tomorrow morning? I was thinking we should finalize the project presentation."
-)
+# Tone-specific prompt configurations
+TONE_CONFIGS = {
+    "simple": {
+        "goal": "Rewrite the text into natural, clean, simple everyday conversational English.",
+        "extra_rules": (
+            "Keep the phrasing casual, warm, and natural as people normally speak in everyday messaging."
+        )
+    },
+    "formal": {
+        "goal": "Rewrite the text into courteous, polite, respectful, and grammatically polished formal English.",
+        "extra_rules": (
+            "Use respectful phrasing, proper polite honorifics, and meticulous formal grammar."
+        )
+    },
+    "professional": {
+        "goal": "Rewrite the text into crisp, confident, concise, and executive corporate workplace English.",
+        "extra_rules": (
+            "Ensure the output sounds authoritative, clear, and business-ready. Avoid fluff or overly chatty slang."
+        )
+    },
+    "email": {
+        "goal": "Format and rewrite the text into a complete, professional email.",
+        "extra_rules": (
+            "Format the response strictly as follows:\n"
+            "Subject: <Concise, relevant subject line>\n\n"
+            "Dear <Recipient/Team>,\n\n"
+            "<Opening sentence clearly stating purpose>\n\n"
+            "<Main body paragraph with necessary details>\n\n"
+            "Best regards,\n"
+            "[Your Name]"
+        )
+    }
+}
 
-def clean_output(raw_text: str) -> str:
-    """Strips outer quotes, backticks, prefixes, or trailing artifacts."""
+BASE_SYSTEM_PROMPT = """You are Keyflow, an expert multilingual AI rewriting engine engineered for mobile keyboards.
+The user writes rough English, typos, slang, or Indian languages (Hindi, Hinglish, Tamil, Tanglish, Telugu, Kannada, Bengali, Marathi, etc.).
+
+CORE DIRECTIVES:
+1. UNDERSTAND CONTEXT & MEANING: Fully interpret colloquial Indian phrasing, Romanized scripts (e.g. Hinglish "bhai kal meeting me kya discuss karna hai"), and intent. Do NOT translate word-for-word robotically; convey the true human intent into fluent English.
+2. FULL LENGTH PRESERVATION: Handle single words, multi-sentence messages, and paragraphs. Never drop or omit thoughts.
+3. FIX ALL ERRORS: Automatically correct spelling, typos, and broken grammar.
+4. STRICT OUTPUT FORMAT: Output ONLY the rewritten text. Never add explanations, introductory greetings (e.g. 'Here is your rewrite:'), notes, or wrapping quotation marks.
+
+FEW-SHOT CONTEXT EXAMPLES:
+Input: bhai kal subah meeting me kya discuss karna hai bata de please
+Output (Simple): Please tell me what we need to discuss in tomorrow morning's meeting.
+
+Input: Mughe kuch chize thumhe se jaanna tha.
+Output (Simple): I wanted to know a few things from you.
+
+Input: Naan nalaiku varamudiyadhu enaku udambu sari illa
+Output (Simple): I won't be able to come tomorrow as I am unwell.
+
+Input: Nenu repu ralenandi konchem work undi
+Output (Simple): I will not be able to come tomorrow as I have some work.
+
+Input: Hey bro kaha per rahe gaye im weighting for you
+Output (Simple): Hey bro, where are you? I'm waiting for you.
+"""
+
+def build_prompt(text: str, tone: str) -> str:
+    normalized_tone = (tone or "simple").lower().strip()
+    if normalized_tone not in TONE_CONFIGS:
+        normalized_tone = "simple"
+
+    config = TONE_CONFIGS[normalized_tone]
+    prompt = (
+        f"{BASE_SYSTEM_PROMPT}\n"
+        f"TONE TARGET: {config['goal']}\n"
+        f"SPECIFIC INSTRUCTIONS: {config['extra_rules']}\n\n"
+        f"Input: {text}\n"
+        f"Output:"
+    )
+    return prompt
+
+def clean_output(raw_text: str, is_email: bool = False) -> str:
+    """Strips thinking scratchpads, outer quotes, prefixes, and markdown blocks."""
+    if not raw_text:
+        return ""
+
     text = raw_text.strip()
 
-    # Strip code block wrappers
+    # 1. Remove reasoning / thinking tags if model outputs <think>...</think>
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+    # 2. Strip markdown code block wrappers
     if text.startswith("```") and text.endswith("```"):
         lines = text.splitlines()
         if len(lines) >= 3:
             text = "\n".join(lines[1:-1]).strip()
 
-    # Strip leading 'Output:' or 'Rewritten:'
+    # 3. Strip leading conversational headers
+    prefixes = [
+        "output:", "rewritten text:", "rewritten:", "english:",
+        "here is the rewritten text:", "here is the email:", "here is the rewrite:"
+    ]
     lower_text = text.lower()
-    for prefix in ["output:", "rewritten text:", "rewritten:", "english:"]:
+    for prefix in prefixes:
         if lower_text.startswith(prefix):
             text = text[len(prefix):].strip()
             break
 
-    # Strip wrapping quotes
-    while (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
-        text = text[1:-1].strip()
+    # 4. Strip wrapping quotation marks (unless it's an email with multiple lines)
+    if not is_email:
+        while (text.startswith('"') and text.endswith('"')) or (text.startswith("'") and text.endswith("'")):
+            text = text[1:-1].strip()
+        text = text.strip('"\'`')
 
-    # Strip any stray leading/trailing quotes
-    text = text.strip('"\'`')
     return text.strip()
 
-def extract_text_from_response(response) -> Optional[str]:
-    """Safely extracts the final answer text from a google-genai response, strictly filtering thoughts."""
-    if not response:
-        return None
+async def rewrite_with_groq(text: str, tone: str, api_key: str) -> Optional[str]:
+    """Calls Groq API with ultra-fast LPU inference (qwen/qwen3.8-27b)."""
+    is_email = (tone or "").lower().strip() == "email"
+    prompt = build_prompt(text, tone)
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Models on Groq: qwen/qwen3.8-27b (primary ~0.6s), groq/compound-mini (backup)
+    models_to_try = ["qwen/qwen3.8-27b", "groq/compound-mini"]
 
-    # 1. First inspect candidates and their parts, skipping any thought parts
-    try:
-        candidates = getattr(response, "candidates", []) or []
-        for candidate in candidates:
-            content = getattr(candidate, "content", None)
-            if content and hasattr(content, "parts"):
-                valid_texts = []
-                for p in content.parts:
-                    # Skip internal thought scratchpads
-                    if getattr(p, "thought", False):
-                        continue
-                    part_text = getattr(p, "text", None)
-                    if part_text and part_text.strip():
-                        valid_texts.append(part_text.strip())
-                if valid_texts:
-                    combined = " ".join(valid_texts)
-                    cleaned = clean_output(combined)
-                    if cleaned:
-                        return cleaned
-    except Exception as e:
-        logger.debug("Error parsing candidates parts: %s", e)
-
-    # 2. Fallback to response.text if candidates did not yield parts
-    try:
-        if hasattr(response, "text") and response.text and response.text.strip():
-            cleaned = clean_output(response.text)
-            if cleaned:
-                return cleaned
-    except Exception:
-        pass
+    async with httpx.AsyncClient(timeout=4.0) as client:
+        for model in models_to_try:
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2,
+                "max_tokens": 512 if is_email else 256
+            }
+            try:
+                res = await client.post(url, headers=headers, json=payload)
+                if res.status_code == 200:
+                    data = res.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        raw_content = choices[0].get("message", {}).get("content", "")
+                        cleaned = clean_output(raw_content, is_email=is_email)
+                        if cleaned:
+                            logger.info("Successfully rewritten via Groq [%s]: '%s'", model, cleaned[:60])
+                            return cleaned
+                else:
+                    logger.warning("Groq model %s returned HTTP %s: %s", model, res.status_code, res.text[:200])
+            except Exception as e:
+                logger.warning("Groq model %s failed: %s", model, e)
 
     return None
 
-async def rewrite_with_gemini(text: str, api_key: str) -> Optional[str]:
-    """Calls Gemini API using google-genai SDK or direct REST API."""
-    full_prompt = f"{SYSTEM_INSTRUCTION}\n\nRewrite this text into natural, clean English:\n{text}"
-
-    # Verified available models on the account: 3.5-flash-lite (fastest, separate quota), 3.6-flash, 3.1-flash-lite, 3.7-flash
-    preferred_model = os.environ.get("GEMINI_MODEL")
-    candidate_models = [
-        preferred_model,
-        "gemini-3.5-flash-lite",
-        "gemini-3.6-flash",
-        "gemini-3.1-flash-lite",
-        "gemini-3.7-flash",
-        "gemini-flash-lite-latest",
-    ]
-    candidate_models = [m for m in candidate_models if m]
+async def rewrite_with_gemini(text: str, tone: str, api_key: str) -> Optional[str]:
+    """Calls Google Gemini API as fallback (gemini-3.5-flash-lite / gemini-3.6-flash)."""
+    is_email = (tone or "").lower().strip() == "email"
+    full_prompt = build_prompt(text, tone)
+    candidate_models = ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
 
     # 1. Try google-genai SDK
     try:
@@ -173,38 +231,51 @@ async def rewrite_with_gemini(text: str, api_key: str) -> Optional[str]:
         for model_name in candidate_models:
             try:
                 config = types.GenerateContentConfig(
-                    max_output_tokens=1024,
+                    max_output_tokens=768 if is_email else 256,
+                    temperature=0.2,
                 )
                 response = client.models.generate_content(
                     model=model_name,
                     contents=full_prompt,
                     config=config,
                 )
-                extracted = extract_text_from_response(response)
-                if extracted:
-                    logger.info("Successfully rewritten via google-genai (%s): '%s'", model_name, extracted)
-                    return extracted
-            except Exception as e:
-                logger.warning("google-genai call failed on '%s': %s", model_name, e)
+                # Parse candidates parts
+                candidates = getattr(response, "candidates", []) or []
+                for candidate in candidates:
+                    content = getattr(candidate, "content", None)
+                    if content and hasattr(content, "parts"):
+                        valid_texts = [
+                            getattr(p, "text", "")
+                            for p in content.parts
+                            if not getattr(p, "thought", False) and getattr(p, "text", "")
+                        ]
+                        if valid_texts:
+                            combined = "\n".join(valid_texts) if is_email else " ".join(valid_texts)
+                            cleaned = clean_output(combined, is_email=is_email)
+                            if cleaned:
+                                logger.info("Successfully rewritten via Gemini SDK (%s)", model_name)
+                                return cleaned
+
+                if hasattr(response, "text") and response.text:
+                    cleaned = clean_output(response.text, is_email=is_email)
+                    if cleaned:
+                        logger.info("Successfully rewritten via Gemini SDK text fallback (%s)", model_name)
+                        return cleaned
+            except Exception as model_err:
+                logger.warning("Gemini SDK model '%s' failed: %s", model_name, model_err)
 
     except ImportError:
-        logger.debug("google-genai SDK not installed, falling back to direct REST call")
-    except Exception as e:
-        logger.warning("google-genai client initialization failed: %s", e)
+        logger.debug("google-genai SDK not installed, trying REST endpoint")
+    except Exception as sdk_err:
+        logger.warning("Gemini SDK init error: %s", sdk_err)
 
-    # 2. Direct REST call fallback
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    # 2. REST API fallback
+    async with httpx.AsyncClient(timeout=10.0) as client:
         for model_name in candidate_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
             payload = {
-                "contents": [
-                    {
-                        "parts": [{"text": full_prompt}]
-                    }
-                ],
-                "generationConfig": {
-                    "maxOutputTokens": 1024
-                }
+                "contents": [{"parts": [{"text": full_prompt}]}],
+                "generationConfig": {"maxOutputTokens": 768 if is_email else 256}
             }
             try:
                 res = await client.post(url, json=payload)
@@ -218,43 +289,43 @@ async def rewrite_with_gemini(text: str, api_key: str) -> Optional[str]:
                             for p in parts
                             if not p.get("thought", False) and p.get("text")
                         ]
-                        combined = " ".join(t.strip() for t in valid_chunks if t.strip())
-                        cleaned = clean_output(combined)
+                        combined = "\n".join(valid_chunks) if is_email else " ".join(valid_chunks)
+                        cleaned = clean_output(combined, is_email=is_email)
                         if cleaned:
-                            logger.info("Successfully rewritten via REST (%s): '%s'", model_name, cleaned)
+                            logger.info("Successfully rewritten via Gemini REST (%s)", model_name)
                             return cleaned
-                else:
-                    logger.warning("Gemini REST model %s returned HTTP %s: %s", model_name, res.status_code, res.text)
-            except Exception as net_err:
-                logger.warning("Gemini REST network error with model %s: %s", model_name, net_err)
+            except Exception as e:
+                logger.warning("Gemini REST model %s failed: %s", model_name, e)
 
     return None
 
-async def rewrite_with_groq(text: str, api_key: str) -> Optional[str]:
-    """Calls Groq API via standard HTTP endpoint."""
-    prompt = f"{SYSTEM_INSTRUCTION}\n\nRewrite this text into natural, clean English:\n{text}"
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "llama-3.3-70b-versatile",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.3,
-        "max_tokens": 256
-    }
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        res = await client.post(url, headers=headers, json=payload)
-        if res.status_code == 200:
-            data = res.json()
-            choices = data.get("choices", [])
-            if choices:
-                return clean_output(choices[0].get("message", {}).get("content", ""))
-        logger.error("Groq API error: HTTP %s - %s", res.status_code, res.text)
-    return None
+def mock_local_rewrite(text: str, tone: str) -> str:
+    """Offline rule-based fallback for immediate testing without internet/keys."""
+    lower = text.lower()
+    norm_tone = (tone or "simple").lower().strip()
+
+    if norm_tone == "email":
+        return (
+            "Subject: Update Regarding Our Conversation\n\n"
+            "Dear Colleague,\n\n"
+            f"I am writing to follow up regarding: {text.strip()}\n\n"
+            "Please let me know if you have any questions.\n\n"
+            "Best regards,\n"
+            "Keyflow User"
+        )
+
+    if "kya scene" in lower or "are you coming" in lower:
+        return "What is the plan? Are you coming today?"
+    if "kal meeting" in lower:
+        return "What time is the meeting tomorrow?"
+    if "kaise ho" in lower:
+        return "How are you doing?"
+
+    # Basic capitalization & punctuation
+    cleaned = text[0].upper() + text[1:] if text else ""
+    if not cleaned.endswith((".", "?", "!")):
+        cleaned += "."
+    return cleaned
 
 @app.get("/")
 @app.get("/api")
@@ -266,9 +337,11 @@ async def rewrite_with_groq(text: str, api_key: str) -> Optional[str]:
 async def root():
     return {
         "service": "Keyflow Rewrite API",
+        "version": "2.0.0",
         "status": "online",
+        "groq_configured": bool(os.environ.get("GROQ_API_KEY")),
         "gemini_configured": bool(os.environ.get("GEMINI_API_KEY")),
-        "groq_configured": bool(os.environ.get("GROQ_API_KEY"))
+        "supported_tones": list(TONE_CONFIGS.keys())
     }
 
 @app.post("/")
@@ -283,51 +356,43 @@ async def rewrite_text(req: RewriteRequest):
     if not input_text:
         raise HTTPException(status_code=400, detail="Input text cannot be empty")
 
-    logger.info("Received rewrite request: '%s'", input_text)
+    tone = (req.tone or "simple").lower().strip()
+    logger.info("Rewrite request [tone=%s]: '%s'", tone, input_text)
 
-    gemini_key = os.environ.get("GEMINI_API_KEY")
     groq_key = os.environ.get("GROQ_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY")
 
     result: Optional[str] = None
+    provider: str = "offline"
 
-    # Priority 1: Gemini
-    if gemini_key:
+    # Multi-Model Cascade:
+    # Priority 1: Groq LPU (Ultra-Fast ~0.6s)
+    if groq_key:
         try:
-            result = await rewrite_with_gemini(input_text, gemini_key)
-        except Exception as e:
-            logger.error("Error during Gemini rewrite: %s", e)
-
-    # Priority 2: Groq
-    if not result and groq_key:
-        try:
-            result = await rewrite_with_groq(input_text, groq_key)
+            result = await rewrite_with_groq(input_text, tone, groq_key)
+            if result:
+                provider = "groq"
         except Exception as e:
             logger.error("Error during Groq rewrite: %s", e)
 
-    # Fallback if LLM failed or no API key is provided
-    provider = "gemini" if gemini_key else "groq"
+    # Priority 2: Gemini (Fallback)
+    if not result and gemini_key:
+        try:
+            logger.info("Falling back to Gemini...")
+            result = await rewrite_with_gemini(input_text, tone, gemini_key)
+            if result:
+                provider = "gemini"
+        except Exception as e:
+            logger.error("Error during Gemini rewrite: %s", e)
+
+    # Priority 3: Offline Mock Fallback
     if not result:
-        logger.warning("LLM did not return a result. Falling back to mock engine.")
-        result = mock_local_rewrite(input_text)
-        provider = "mock_fallback"
+        logger.warning("All LLM providers unavailable. Using local offline fallback.")
+        result = mock_local_rewrite(input_text, tone)
+        provider = "offline_fallback"
 
-    logger.info("Rewritten result [%s]: '%s'", provider, result)
-    return RewriteResponse(rewritten_text=result, provider=provider)
-
-def mock_local_rewrite(text: str) -> str:
-    """Simple offline mock fallback for immediate testing without keys."""
-    lower = text.lower()
-    if "kya scene" in lower or "are you coming" in lower:
-        return "What is the plan? Are you coming today?"
-    if "kal meeting" in lower:
-        return "What time is the meeting tomorrow?"
-    if "kaise ho" in lower:
-        return "How are you doing?"
-    # Capitalize and add proper punctuation
-    cleaned = text[0].upper() + text[1:] if text else ""
-    if not cleaned.endswith((".", "?", "!")):
-        cleaned += "."
-    return cleaned
+    logger.info("Rewritten result [%s | %s]: '%s'", provider, tone, result[:60])
+    return RewriteResponse(rewritten_text=result, provider=provider, tone=tone)
 
 if __name__ == "__main__":
     import uvicorn

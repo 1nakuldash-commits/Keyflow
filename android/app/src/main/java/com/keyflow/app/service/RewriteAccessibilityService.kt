@@ -7,6 +7,7 @@ import android.animation.ValueAnimator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -29,6 +30,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import com.keyflow.app.R
 import kotlinx.coroutines.CoroutineScope
@@ -55,11 +57,14 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val PREF_PILL_SNAP_SIDE = "pref_pill_snap_side" // "LEFT" or "RIGHT"
         private const val PREF_PILL_X = "pref_pill_x"
         private const val PREF_PILL_Y_OFFSET = "pref_pill_y_offset"
+        private const val PREF_SELECTED_TONE = "pref_selected_tone"
+        private const val DEFAULT_TONE = "simple"
         private const val BADGE_SIZE_DP = 44
         private const val ROOT_PADDING_DP = 8
         private const val BADGE_MARGIN_EDGE_DP = 6 // Clean 6dp spacing hugging screen edge
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 240L
+        private const val DOUBLE_TAP_TIMEOUT_MS = 260L
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
     }
 
@@ -72,6 +77,12 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var ivIcon: ImageView? = null
     private var progressBar: ProgressBar? = null
     private var snapAnimator: ValueAnimator? = null
+
+    // Tone Menu State & Gesture Disambiguation
+    private var toneMenuView: View? = null
+    private var isToneMenuAttached = false
+    private var pendingSingleTapRunnable: Runnable? = null
+    private var lastTapTime = 0L
 
     private var isOverlayAttached = false
     private var isHiding = false
@@ -186,6 +197,11 @@ class RewriteAccessibilityService : AccessibilityService() {
             isDragging = true
             isUserDragging = true
 
+            // Cancel any tone menu and tap timers if dragging begins
+            dismissToneMenu()
+            pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
+            pendingSingleTapRunnable = null
+
             // Cancel any ongoing magnetic snap
             snapAnimator?.cancel()
 
@@ -292,14 +308,34 @@ class RewriteAccessibilityService : AccessibilityService() {
                         animateSnapTo(targetSnapX, snapSide)
                     } else {
                         isUserDragging = false
-                        // Quick tap (< 240ms) -> Trigger Rewrite
-                        handleRewriteClicked()
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastTapTime < DOUBLE_TAP_TIMEOUT_MS) {
+                            // Double-Tap Detected -> Cancel pending single tap and toggle Tone Menu
+                            pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
+                            pendingSingleTapRunnable = null
+                            lastTapTime = 0L
+
+                            touchTarget.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            toggleToneMenu()
+                        } else {
+                            // First Tap: Schedule single-tap rewrite execution after 220ms
+                            lastTapTime = now
+                            pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
+                            val task = Runnable {
+                                pendingSingleTapRunnable = null
+                                handleRewriteClicked()
+                            }
+                            pendingSingleTapRunnable = task
+                            mainHandler.postDelayed(task, 220L)
+                        }
                     }
                     true
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
+                    pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
+                    pendingSingleTapRunnable = null
                     touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(120).start()
                     isDragging = false
                     isUserDragging = false
@@ -566,6 +602,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         mainHandler.removeCallbacks(keyboardCheckRunnable)
         cancelPendingHide()
         snapAnimator?.cancel()
+        dismissToneMenu()
         val view = overlayView ?: return
 
         if (isOverlayAttached && !isHiding) {
@@ -855,14 +892,17 @@ class RewriteAccessibilityService : AccessibilityService() {
      * Executes asynchronous OkHttp POST call to the FastAPI backend.
      */
     private suspend fun requestRewriteFromBackend(text: String): String? = withContext(Dispatchers.IO) {
+        val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
+        val selectedTone = prefs.getString(PREF_SELECTED_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
+
         val payload = JSONObject().apply {
             put("text", text)
+            put("tone", selectedTone)
         }
 
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = payload.toString().toRequestBody(mediaType)
 
-        val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
         val rawUrl = prefs.getString("pref_backend_url", BACKEND_URL) ?: BACKEND_URL
         val targetUrl = if (rawUrl.endsWith("/rewrite")) rawUrl else "${rawUrl.trimEnd('/')}/rewrite"
 
@@ -954,6 +994,189 @@ class RewriteAccessibilityService : AccessibilityService() {
         ivIcon?.visibility = if (isLoading) View.GONE else View.VISIBLE
         btnRewrite?.isEnabled = !isLoading
         btnRewrite?.alpha = if (isLoading) 0.6f else 1.0f
+    }
+
+    /**
+     * Toggles the Tone Switcher Menu on double-tap of the floating AI pill.
+     */
+    private fun toggleToneMenu() {
+        if (isToneMenuAttached) {
+            dismissToneMenu()
+        } else {
+            showToneMenu()
+        }
+    }
+
+    /**
+     * Displays the sleek glassmorphic tone selector menu adjacent to the circular pill.
+     */
+    private fun showToneMenu() {
+        if (!isOverlayAttached || overlayView == null) return
+        dismissToneMenu()
+
+        val inflater = LayoutInflater.from(this)
+        val menuView = inflater.inflate(R.layout.overlay_tone_menu, null) ?: return
+        toneMenuView = menuView
+
+        val chipSimple = menuView.findViewById<TextView>(R.id.chipToneSimple)
+        val chipFormal = menuView.findViewById<TextView>(R.id.chipToneFormal)
+        val chipPro = menuView.findViewById<TextView>(R.id.chipToneProfessional)
+        val chipEmail = menuView.findViewById<TextView>(R.id.chipToneEmail)
+
+        val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
+        val currentTone = prefs.getString(PREF_SELECTED_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
+
+        updateToneChipsHighlight(currentTone, chipSimple, chipFormal, chipPro, chipEmail)
+
+        chipSimple?.setOnClickListener { onToneSelected("simple") }
+        chipFormal?.setOnClickListener { onToneSelected("formal") }
+        chipPro?.setOnClickListener { onToneSelected("professional") }
+        chipEmail?.setOnClickListener { onToneSelected("email") }
+
+        // Measure menu bounds to place it precisely adjacent to the circular pill
+        val unspecifiedSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        menuView.measure(unspecifiedSpec, unspecifiedSpec)
+        val menuWidth = menuView.measuredWidth
+        val menuHeight = menuView.measuredHeight
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val density = resources.displayMetrics.density
+        val edgeMargin = (8 * density).toInt()
+
+        val pillScreenLeft = overlayLayoutParams.x + rootPaddingPx
+        val pillScreenRight = pillScreenLeft + badgeSizePx
+        val pillCenterY = overlayLayoutParams.y + rootPaddingPx + (badgeSizePx / 2)
+        val isPillOnLeft = (pillScreenLeft + (badgeSizePx / 2)) < screenWidth / 2
+
+        val targetX: Int = if (isPillOnLeft) {
+            val candidateX = pillScreenRight + (6 * density).toInt()
+            val maxX = screenWidth - menuWidth - edgeMargin
+            candidateX.coerceAtMost(maxX)
+        } else {
+            val candidateX = pillScreenLeft - menuWidth - (6 * density).toInt()
+            candidateX.coerceAtLeast(edgeMargin)
+        }
+
+        val targetY = pillCenterY - (menuHeight / 2)
+
+        val lp = WindowManager.LayoutParams().apply {
+            type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            format = PixelFormat.TRANSLUCENT
+            flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+            windowAnimations = 0
+            gravity = Gravity.TOP or Gravity.START
+            width = WindowManager.LayoutParams.WRAP_CONTENT
+            height = WindowManager.LayoutParams.WRAP_CONTENT
+            x = targetX
+            y = targetY
+        }
+
+        menuView.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_OUTSIDE) {
+                dismissToneMenu()
+                true
+            } else {
+                false
+            }
+        }
+
+        menuView.alpha = 0f
+        menuView.scaleX = 0.85f
+        menuView.scaleY = 0.85f
+
+        try {
+            windowManager.addView(menuView, lp)
+            isToneMenuAttached = true
+            menuView.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(160)
+                .setInterpolator(DecelerateInterpolator())
+                .start()
+            Log.d(TAG, "Tone menu attached at X=$targetX, Y=$targetY")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to attach tone menu to WindowManager", e)
+            toneMenuView = null
+            isToneMenuAttached = false
+        }
+    }
+
+    private fun updateToneChipsHighlight(
+        activeTone: String,
+        chipSimple: TextView? = null,
+        chipFormal: TextView? = null,
+        chipPro: TextView? = null,
+        chipEmail: TextView? = null
+    ) {
+        val s = chipSimple ?: toneMenuView?.findViewById(R.id.chipToneSimple) ?: return
+        val f = chipFormal ?: toneMenuView?.findViewById(R.id.chipToneFormal) ?: return
+        val p = chipPro ?: toneMenuView?.findViewById(R.id.chipToneProfessional) ?: return
+        val e = chipEmail ?: toneMenuView?.findViewById(R.id.chipToneEmail) ?: return
+
+        fun styleChip(chip: TextView, isActive: Boolean) {
+            if (isActive) {
+                chip.setBackgroundResource(R.drawable.bg_tone_chip_active)
+                chip.setTextColor(Color.parseColor("#38BDF8"))
+            } else {
+                chip.setBackgroundResource(R.drawable.bg_tone_chip_inactive)
+                chip.setTextColor(Color.parseColor("#94A3B8"))
+            }
+        }
+
+        styleChip(s, activeTone == "simple")
+        styleChip(f, activeTone == "formal")
+        styleChip(p, activeTone == "professional")
+        styleChip(e, activeTone == "email")
+    }
+
+    private fun onToneSelected(tone: String) {
+        val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
+        prefs.edit().putString(PREF_SELECTED_TONE, tone).apply()
+
+        updateToneChipsHighlight(tone)
+        btnRewrite?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+
+        val displayName = when (tone) {
+            "formal" -> "Formal Mode"
+            "professional" -> "Professional Mode"
+            "email" -> "Email Mode"
+            else -> "Simple Mode"
+        }
+        Toast.makeText(applicationContext, "Keyflow: $displayName active", Toast.LENGTH_SHORT).show()
+
+        mainHandler.postDelayed({
+            dismissToneMenu()
+        }, 220L)
+    }
+
+    private fun dismissToneMenu() {
+        if (!isToneMenuAttached && toneMenuView == null) return
+        val viewToDismiss = toneMenuView ?: return
+        isToneMenuAttached = false
+
+        viewToDismiss.animate()
+            .alpha(0f)
+            .scaleX(0.85f)
+            .scaleY(0.85f)
+            .setDuration(120)
+            .withEndAction {
+                try {
+                    windowManager.removeViewImmediate(viewToDismiss)
+                    Log.d(TAG, "Tone menu dismissed successfully")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to remove tone menu view", e)
+                } finally {
+                    if (toneMenuView == viewToDismiss) {
+                        toneMenuView = null
+                    }
+                }
+            }
+            .start()
     }
 
     override fun onInterrupt() {
