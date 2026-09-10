@@ -62,10 +62,11 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val DEFAULT_TONE = "simple"
         private const val BADGE_SIZE_DP = 44
         private const val ROOT_PADDING_DP = 8
-        private const val BADGE_MARGIN_EDGE_DP = 6 // Clean 6dp spacing hugging screen edge
+        private const val BADGE_MARGIN_EDGE_DP = 10 // Clean 10dp margin for both pill and popup menu
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 260L
-        private const val DOUBLE_TAP_THRESHOLD_MS = 320L
+        private const val DOUBLE_TAP_THRESHOLD_MS = 420L
+        private const val MENU_WIDTH_DP = 132
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
     }
 
@@ -432,8 +433,13 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     private fun updateLastInteractedNode(newNode: AccessibilityNodeInfo) {
-        if (lastInteractedInputNode != newNode) {
-            lastInteractedInputNode?.recycle()
+        try {
+            val copy = AccessibilityNodeInfo.obtain(newNode)
+            if (lastInteractedInputNode != null) {
+                lastInteractedInputNode?.recycle()
+            }
+            lastInteractedInputNode = copy
+        } catch (e: Exception) {
             lastInteractedInputNode = newNode
         }
     }
@@ -786,7 +792,8 @@ class RewriteAccessibilityService : AccessibilityService() {
         val candidates = mutableListOf<AccessibilityNodeInfo>()
         rootInActiveWindow?.let { collectInputCandidates(it, candidates) }
 
-        if (candidates.isEmpty() && currentWindows != null) {
+        val hasCandidateWithText = candidates.any { extractTextFromNode(it).isNotEmpty() }
+        if (!hasCandidateWithText && currentWindows != null) {
             for (window in currentWindows) {
                 if (window.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
                     window.root?.let { collectInputCandidates(it, candidates) }
@@ -997,10 +1004,23 @@ class RewriteAccessibilityService : AccessibilityService() {
             )
         }
 
+        fun placeCursorAtEnd(node: AccessibilityNodeInfo) {
+            try {
+                val selArgs = Bundle().apply {
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, newText.length)
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, newText.length)
+                }
+                node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selArgs)
+            } catch (e: Exception) {
+                // Ignore cursor positioning failure
+            }
+        }
+
         for (node in candidateNodes) {
             if (node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }) {
                 if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)) {
                     Log.d(TAG, "Successfully injected text via ACTION_SET_TEXT on ${node.className}")
+                    placeCursorAtEnd(node)
                     return
                 }
             }
@@ -1009,6 +1029,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         // Try direct ACTION_SET_TEXT on targetNode even if not advertised in actionList
         if (targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)) {
             Log.d(TAG, "Successfully injected text via direct ACTION_SET_TEXT on targetNode")
+            placeCursorAtEnd(targetNode)
             return
         }
 
@@ -1063,8 +1084,9 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Displays the minimal ChatGPT-inspired vertical tone selector menu anchored directly above
-     * the floating circular pill with matching edge padding (6dp margin) so it never moves off-screen.
+     * Displays the minimal ChatGPT-inspired vertical tone selector menu anchored dynamically
+     * above or below the floating pill based on screen placement, matching the edge padding
+     * identically (10dp margin) with zero clipping.
      */
     private fun showToneMenu() {
         if (!isOverlayAttached || overlayView == null) return
@@ -1089,37 +1111,62 @@ class RewriteAccessibilityService : AccessibilityService() {
         chipPro?.setOnClickListener { onToneSelected("professional") }
         chipEmail?.setOnClickListener { onToneSelected("email") }
 
-        // Measure menu bounds
-        val unspecifiedSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
-        menuView.measure(unspecifiedSpec, unspecifiedSpec)
-        val menuWidth = menuView.measuredWidth
-        val menuHeight = menuView.measuredHeight
-
         val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
 
-        // Pill screen positions
+        // Measure menu bounds with exact allocated width (132dp)
+        val menuWidthPx = (MENU_WIDTH_DP * density).toInt()
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(menuWidthPx, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        menuView.measure(widthSpec, heightSpec)
+        val menuHeightPx = menuView.measuredHeight
+
+        // Pill screen coordinates
         val pillScreenLeft = overlayLayoutParams.x + rootPaddingPx
         val pillVisibleTop = overlayLayoutParams.y + rootPaddingPx
+        val pillVisibleBottom = pillVisibleTop + badgeSizePx
+        val pillCenterY = pillVisibleTop + (badgeSizePx / 2)
         val isPillOnLeft = (pillScreenLeft + (badgeSizePx / 2)) < screenWidth / 2
 
-        // Keep edge margin identical to the floating pill: 6dp (badgeMarginEdgePx)
-        val targetX: Int = if (isPillOnLeft) {
-            badgeMarginEdgePx
+        // Dynamic vertical direction:
+        // If pill is in the upper half of screen (or insufficient space above), open DOWNWARD.
+        // If pill is in the lower half (e.g. above keyboard), open UPWARD.
+        val gapPx = (8 * density).toInt()
+        val minSafeTopPx = (36 * density).toInt() // Safe status bar clearance
+        val maxAllowedBottom = if (activeDockedKeyboardTop > 0) {
+            activeDockedKeyboardTop - (6 * density).toInt()
         } else {
-            screenWidth - menuWidth - badgeMarginEdgePx
+            screenHeight - (32 * density).toInt()
         }
 
-        // Anchor vertically directly ABOVE the floating pill with clean 8dp separation
-        val gapAbovePill = (8 * density).toInt()
-        val minTopY = (28 * density).toInt()
-        var targetY = pillVisibleTop - menuHeight - gapAbovePill
+        val spaceAbove = pillVisibleTop - minSafeTopPx
+        val canFitBelow = (pillVisibleBottom + gapPx + menuHeightPx) <= maxAllowedBottom
+        val canFitAbove = spaceAbove >= (menuHeightPx + gapPx)
 
-        // If pill is near the very top of screen, display menu below the pill
-        if (targetY < minTopY) {
-            val pillVisibleBottom = pillVisibleTop + badgeSizePx
-            targetY = pillVisibleBottom + gapAbovePill
+        val openDownward = when {
+            pillCenterY < screenHeight * 0.45f && canFitBelow -> true
+            !canFitAbove && canFitBelow -> true
+            else -> false
         }
+
+        val targetY: Int
+        val pivotY: Float
+        if (openDownward) {
+            targetY = (pillVisibleBottom + gapPx).coerceAtMost(maxAllowedBottom - menuHeightPx)
+            pivotY = 0f // Bloom downward from the bottom of the pill
+        } else {
+            targetY = (pillVisibleTop - menuHeightPx - gapPx).coerceAtLeast(minSafeTopPx)
+            pivotY = menuHeightPx.toFloat() // Bloom upward from the top of the pill
+        }
+
+        // Horizontal alignment:
+        // Match the pill's edge padding identically!
+        // When on right: gravity = Gravity.TOP or Gravity.RIGHT, x = badgeMarginEdgePx
+        // When on left: gravity = Gravity.TOP or Gravity.LEFT, x = badgeMarginEdgePx
+        val gravity = Gravity.TOP or (if (isPillOnLeft) Gravity.LEFT else Gravity.RIGHT)
+        val targetX = badgeMarginEdgePx
+        val pivotX = if (isPillOnLeft) 0f else menuWidthPx.toFloat()
 
         val lp = WindowManager.LayoutParams().apply {
             type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
@@ -1127,11 +1174,10 @@ class RewriteAccessibilityService : AccessibilityService() {
             flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                     WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             windowAnimations = 0
-            gravity = Gravity.TOP or Gravity.START
-            width = WindowManager.LayoutParams.WRAP_CONTENT
+            this.gravity = gravity
+            width = menuWidthPx
             height = WindowManager.LayoutParams.WRAP_CONTENT
             x = targetX
             y = targetY
@@ -1146,12 +1192,12 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Apple liquid glass bloom physics expanding fluidly from the pill
+        // Apple liquid glass bloom physics
         menuView.alpha = 0f
         menuView.scaleX = 0.72f
         menuView.scaleY = 0.72f
-        menuView.pivotX = if (isPillOnLeft) 0f else menuWidth.toFloat()
-        menuView.pivotY = if (targetY < pillVisibleTop) menuHeight.toFloat() else 0f
+        menuView.pivotX = pivotX
+        menuView.pivotY = pivotY
 
         try {
             windowManager.addView(menuView, lp)
@@ -1163,7 +1209,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                 .setDuration(190)
                 .setInterpolator(OvershootInterpolator(1.2f))
                 .start()
-            Log.d(TAG, "Vertical liquid-glass tone menu anchored at X=$targetX, Y=$targetY (above pill)")
+            Log.d(TAG, "Tone menu attached: direction=${if (openDownward) "DOWN" else "UP"}, X=$targetX, Y=$targetY, side=${if (isPillOnLeft) "LEFT" else "RIGHT"}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach tone menu to WindowManager", e)
             toneMenuView = null
