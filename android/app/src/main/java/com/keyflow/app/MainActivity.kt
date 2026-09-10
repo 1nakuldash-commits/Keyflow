@@ -93,13 +93,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun testAndSaveBackendUrl(url: String) {
-        val trimmedUrl = url.trim()
-        val finalRewriteUrl = if (trimmedUrl.endsWith("/rewrite")) {
-            trimmedUrl
-        } else {
-            "${trimmedUrl.trimEnd('/')}/rewrite"
+    private fun getCleanBaseUrl(url: String): String {
+        var clean = url.trim().trimEnd('/')
+        val suffixes = listOf("/rewrite", "/transcribe", "/api/rewrite", "/api/transcribe", "/api")
+        for (suffix in suffixes) {
+            if (clean.endsWith(suffix)) {
+                clean = clean.substring(0, clean.length - suffix.length).trimEnd('/')
+                break
+            }
         }
+        return clean
+    }
+
+    private fun testAndSaveBackendUrl(url: String) {
+        val rootUrl = getCleanBaseUrl(url)
+        val finalRewriteUrl = "$rootUrl/rewrite"
 
         // ALWAYS save immediately so the user never loses their URL
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -113,12 +121,6 @@ class MainActivity : AppCompatActivity() {
         btnTestBackend.isEnabled = false
 
         lifecycleScope.launch {
-            val rootUrl = if (finalRewriteUrl.contains("/rewrite")) {
-                finalRewriteUrl.substringBefore("/rewrite")
-            } else {
-                finalRewriteUrl.trimEnd('/')
-            }
-
             val testResult = testConnection(finalRewriteUrl, rootUrl)
             btnTestBackend.isEnabled = true
 

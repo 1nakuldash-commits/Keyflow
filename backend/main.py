@@ -4,8 +4,13 @@ import logging
 from typing import Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import httpx
+
+# Optional master default Groq key read from environment
+GROQ_DEFAULT_KEY = os.environ.get("GROQ_DEFAULT_KEY", "")
 
 # Configure logging
 logging.basicConfig(
@@ -78,6 +83,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Sanitizes binary data from validation errors to completely prevent UnicodeDecodeError 500s."""
+    clean_errors = []
+    for err in exc.errors():
+        err_dict = dict(err)
+        if "input" in err_dict:
+            raw_val = err_dict["input"]
+            if isinstance(raw_val, bytes):
+                err_dict["input"] = f"<binary data: {len(raw_val)} bytes>"
+            elif not isinstance(raw_val, (str, int, float, bool, list, dict, type(None))):
+                err_dict["input"] = str(raw_val)
+        clean_errors.append(err_dict)
+    logger.warning("Request validation error on %s: %s", request.url.path, clean_errors)
+    return JSONResponse(
+        status_code=422,
+        content={"detail": clean_errors}
+    )
 
 class RewriteRequest(BaseModel):
     text: str
@@ -331,7 +355,7 @@ def mock_local_rewrite(text: str, tone: str) -> str:
     return cleaned
 
 async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str) -> Optional[str]:
-    """Transcribes audio using Groq's whisper-large-v3-turbo model with specialized Hinglish prompt."""
+    """Transcribes audio using Groq's whisper-large-v3-turbo with fallback to whisper-large-v3."""
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {
         "Authorization": f"Bearer {api_key}"
@@ -351,33 +375,43 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str)
     mime = mime_map.get(ext, "audio/m4a")
     safe_name = filename if filename else "recording.m4a"
 
-    files = {
-        "file": (safe_name, audio_bytes, mime)
-    }
-    data = {
-        "model": "whisper-large-v3-turbo",
-        "prompt": "Keyflow transcription: English, Hindi, and Hinglish. Casual conversational phrases, numbers, times, locations, and accurate phonetic spelling.",
-        "response_format": "json",
-        "temperature": "0.0"
-    }
+    # Multi-model Whisper cascade: Turbo first for speed, standard v3 as fallback
+    whisper_models = ["whisper-large-v3-turbo", "whisper-large-v3"]
+    prompt = (
+        "Keyflow transcription: casual conversational spoken English, Hindi, and Hinglish. "
+        "Transcribe spoken Hindi words phonetically in Roman script (Hinglish) such as: "
+        "'bhai rapido me hu', '10 min me aa raha hu', 'theek hai', 'kya scene hai', 'kahan ho', "
+        "numbers, times, and locations."
+    )
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        try:
-            res = await client.post(url, headers=headers, files=files, data=data)
-            if res.status_code == 200:
-                result_json = res.json()
-                text = result_json.get("text", "").strip()
-                logger.info("Groq Whisper transcription success (%d bytes): '%s'", len(audio_bytes), text[:80])
-                return text
-            else:
-                logger.error("Groq Whisper API returned HTTP %d: %s", res.status_code, res.text[:200])
-        except Exception as e:
-            logger.error("Groq Whisper API call failed: %s", e)
+        for model_name in whisper_models:
+            files = {
+                "file": (safe_name, audio_bytes, mime)
+            }
+            data = {
+                "model": model_name,
+                "prompt": prompt,
+                "response_format": "json",
+                "temperature": "0.0"
+            }
+            try:
+                res = await client.post(url, headers=headers, files=files, data=data)
+                if res.status_code == 200:
+                    result_json = res.json()
+                    text = result_json.get("text", "").strip()
+                    if text:
+                        logger.info("Groq Whisper [%s] success (%d bytes): '%s'", model_name, len(audio_bytes), text[:80])
+                        return text
+                else:
+                    logger.warning("Groq Whisper [%s] returned HTTP %d: %s", model_name, res.status_code, res.text[:200])
+            except Exception as e:
+                logger.warning("Groq Whisper [%s] failed: %s", model_name, e)
     return None
 
 async def perform_rewrite_pipeline(input_text: str, tone: str) -> tuple[str, str]:
     """Executes multi-model cascade (Groq -> Gemini -> local fallback). Returns (rewritten_text, provider)."""
-    groq_key = os.environ.get("GROQ_API_KEY")
+    groq_key = os.environ.get("GROQ_API_KEY") or os.environ.get("GROQ_AUDIO_API_KEY") or GROQ_DEFAULT_KEY
     gemini_key = os.environ.get("GEMINI_API_KEY")
 
     result: Optional[str] = None
@@ -411,58 +445,146 @@ async def perform_rewrite_pipeline(input_text: str, tone: str) -> tuple[str, str
 
     return result, provider
 
+async def execute_rewrite(input_text: str, tone: str) -> RewriteResponse:
+    text = (input_text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Input text cannot be empty")
+
+    norm_tone = (tone or "simple").lower().strip()
+    logger.info("Execute rewrite [tone=%s]: '%s'", norm_tone, text[:80])
+
+    result, provider = await perform_rewrite_pipeline(text, norm_tone)
+    logger.info("Rewritten result [%s | %s]: '%s'", provider, norm_tone, result[:80])
+    return RewriteResponse(rewritten_text=result, provider=provider, tone=norm_tone)
+
+async def execute_transcribe(
+    audio_bytes: bytes,
+    filename: str,
+    selected_tone: str
+) -> TranscribeResponse:
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="No audio file or data provided in request")
+
+    audio_key = os.environ.get("GROQ_AUDIO_API_KEY") or os.environ.get("GROQ_API_KEY") or GROQ_DEFAULT_KEY
+    if not audio_key:
+        raise HTTPException(status_code=500, detail="GROQ API key is not configured on server")
+
+    norm_tone = (selected_tone or "simple").lower().strip()
+    safe_name = filename or "recording.m4a"
+    logger.info("Execute transcribe (%d bytes, filename=%s, tone=%s)", len(audio_bytes), safe_name, norm_tone)
+
+    # 1. Transcribe with Groq whisper-large-v3-turbo (with whisper-large-v3 fallback)
+    transcribed_text = await transcribe_audio_groq(audio_bytes, safe_name, audio_key)
+    if not transcribed_text:
+        raise HTTPException(status_code=502, detail="Failed to transcribe audio with Groq Whisper API")
+
+    logger.info("Transcribed text: '%s'", transcribed_text)
+
+    # 2. Rewrite / polish text into the selected voice tone
+    rewritten_text, rewrite_provider = await perform_rewrite_pipeline(transcribed_text, norm_tone)
+
+    return TranscribeResponse(
+        transcribed_text=transcribed_text,
+        rewritten_text=rewritten_text or transcribed_text,
+        tone=norm_tone,
+        provider="whisper-large-v3-turbo",
+        rewrite_provider=rewrite_provider
+    )
+
 @app.get("/")
 @app.get("/api")
 @app.get("/api/")
 @app.get("/rewrite")
 @app.get("/rewrite/")
+@app.get("/transcribe")
+@app.get("/transcribe/")
 @app.get("/api/rewrite")
 @app.get("/api/rewrite/")
+@app.get("/api/transcribe")
+@app.get("/api/transcribe/")
 async def root():
     return {
-        "service": "Keyflow Rewrite API",
-        "version": "2.2.0",
+        "service": "Keyflow Rewrite & Voice API",
+        "version": "2.3.0",
         "status": "online",
-        "groq_configured": bool(os.environ.get("GROQ_API_KEY")),
-        "groq_audio_configured": bool(os.environ.get("GROQ_AUDIO_API_KEY")),
+        "groq_configured": bool(os.environ.get("GROQ_API_KEY") or GROQ_DEFAULT_KEY),
+        "groq_audio_configured": bool(os.environ.get("GROQ_AUDIO_API_KEY") or GROQ_DEFAULT_KEY),
         "gemini_configured": bool(os.environ.get("GEMINI_API_KEY")),
         "supported_tones": list(SYSTEM_PROMPTS.keys())
     }
 
+# =========================================================================
+# Unified Dispatcher: Handles POST / and POST /api seamlessly on Vercel
+# Detects whether the payload is Audio (multipart/form-data or audio/*)
+# or Text (application/json) and routes to the appropriate pipeline.
+# =========================================================================
 @app.post("/")
 @app.post("/api")
 @app.post("/api/")
+async def unified_api_handler(request: Request):
+    content_type = request.headers.get("content-type", "").lower()
+    matched_path = (request.headers.get("x-matched-path", "") or request.headers.get("x-vercel-matched-path", "")).lower()
+
+    is_audio = (
+        "multipart/form-data" in content_type or
+        content_type.startswith("audio/") or
+        "transcribe" in matched_path or
+        request.query_params.get("action") == "transcribe"
+    )
+
+    if is_audio:
+        audio_bytes = b""
+        filename = "recording.m4a"
+        tone = request.query_params.get("tone") or request.headers.get("x-tone") or "simple"
+
+        if "multipart/form-data" in content_type:
+            try:
+                form = await request.form()
+                form_file = form.get("file")
+                if form_file and hasattr(form_file, "read"):
+                    audio_bytes = await form_file.read()
+                    filename = getattr(form_file, "filename", "recording.m4a") or "recording.m4a"
+                tone = form.get("tone", tone)
+            except Exception as e:
+                logger.warning("Error reading multipart form in unified handler: %s", e)
+                audio_bytes = await request.body()
+        else:
+            audio_bytes = await request.body()
+            disposition = request.headers.get("content-disposition", "")
+            if "filename=" in disposition:
+                filename = disposition.split("filename=")[1].strip("'\"")
+
+        return await execute_transcribe(audio_bytes, filename, str(tone))
+
+    # Text Rewrite request
+    try:
+        data = await request.json()
+    except Exception as e:
+        logger.error("Failed to parse JSON body on %s: %s", request.url.path, e)
+        raise HTTPException(status_code=400, detail="Expected JSON payload for text rewrite or multipart/form-data for audio")
+
+    text = data.get("text", "")
+    tone = data.get("tone", "simple")
+    return await execute_rewrite(text, tone)
+
+# Dedicated Text Rewrite endpoints
 @app.post("/rewrite", response_model=RewriteResponse)
 @app.post("/rewrite/", response_model=RewriteResponse)
 @app.post("/api/rewrite", response_model=RewriteResponse)
 @app.post("/api/rewrite/", response_model=RewriteResponse)
-async def rewrite_text(req: RewriteRequest):
-    input_text = req.text.strip()
-    if not input_text:
-        raise HTTPException(status_code=400, detail="Input text cannot be empty")
+async def rewrite_text_endpoint(req: RewriteRequest):
+    return await execute_rewrite(req.text, req.tone or "simple")
 
-    tone = (req.tone or "simple").lower().strip()
-    logger.info("Rewrite request [tone=%s]: '%s'", tone, input_text)
-
-    result, provider = await perform_rewrite_pipeline(input_text, tone)
-    logger.info("Rewritten result [%s | %s]: '%s'", provider, tone, result[:60])
-    return RewriteResponse(rewritten_text=result, provider=provider, tone=tone)
-
+# Dedicated Voice Transcribe endpoints
 @app.post("/transcribe", response_model=TranscribeResponse)
 @app.post("/transcribe/", response_model=TranscribeResponse)
 @app.post("/api/transcribe", response_model=TranscribeResponse)
 @app.post("/api/transcribe/", response_model=TranscribeResponse)
-async def transcribe_audio(
+async def transcribe_audio_endpoint(
     request: Request,
     file: Optional[UploadFile] = File(None),
     tone: Optional[str] = Form(None)
 ):
-    """Transcribes user voice with Groq whisper-large-v3-turbo, then rewrites into selected tone."""
-    audio_key = os.environ.get("GROQ_AUDIO_API_KEY")
-    if not audio_key:
-        raise HTTPException(status_code=500, detail="GROQ_AUDIO_API_KEY is not configured on server")
-
-    # Read audio bytes from multipart form file or directly from request body
     audio_bytes: bytes = b""
     filename: str = "recording.m4a"
 
@@ -471,41 +593,13 @@ async def transcribe_audio(
         if file.filename:
             filename = file.filename
     else:
-        # Check raw body
-        body = await request.body()
-        if body:
-            audio_bytes = body
-            # Check for header filename
-            content_disposition = request.headers.get("content-disposition", "")
-            if "filename=" in content_disposition:
-                filename = content_disposition.split("filename=")[1].strip("'\"")
+        audio_bytes = await request.body()
+        content_disposition = request.headers.get("content-disposition", "")
+        if "filename=" in content_disposition:
+            filename = content_disposition.split("filename=")[1].strip("'\"")
 
-    # Resolve tone: from form, query params, or header
     selected_tone = tone or request.query_params.get("tone") or request.headers.get("x-tone") or "simple"
-    selected_tone = selected_tone.lower().strip()
-
-    if not audio_bytes:
-        raise HTTPException(status_code=400, detail="No audio file or data provided in request")
-
-    logger.info("Received audio for transcription (%d bytes, filename=%s, tone=%s)", len(audio_bytes), filename, selected_tone)
-
-    # 1. Transcribe with Groq whisper-large-v3-turbo
-    transcribed_text = await transcribe_audio_groq(audio_bytes, filename, audio_key)
-    if not transcribed_text:
-        raise HTTPException(status_code=502, detail="Failed to transcribe audio with Groq Whisper API")
-
-    logger.info("Transcribed text: '%s'", transcribed_text)
-
-    # 2. Rewrite / polish text into the selected voice tone
-    rewritten_text, rewrite_provider = await perform_rewrite_pipeline(transcribed_text, selected_tone)
-
-    return TranscribeResponse(
-        transcribed_text=transcribed_text,
-        rewritten_text=rewritten_text or transcribed_text,
-        tone=selected_tone,
-        provider="whisper-large-v3-turbo",
-        rewrite_provider=rewrite_provider
-    )
+    return await execute_transcribe(audio_bytes, filename, str(selected_tone))
 
 if __name__ == "__main__":
     import uvicorn

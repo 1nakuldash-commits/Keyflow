@@ -1167,6 +1167,18 @@ class RewriteAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun getCleanBaseUrl(rawUrl: String): String {
+        var clean = rawUrl.trim().trimEnd('/')
+        val suffixes = listOf("/rewrite", "/transcribe", "/api/rewrite", "/api/transcribe", "/api")
+        for (suffix in suffixes) {
+            if (clean.endsWith(suffix)) {
+                clean = clean.substring(0, clean.length - suffix.length).trimEnd('/')
+                break
+            }
+        }
+        return clean
+    }
+
     /**
      * Executes asynchronous OkHttp POST call to the FastAPI backend for text rewriting.
      */
@@ -1183,7 +1195,8 @@ class RewriteAccessibilityService : AccessibilityService() {
         val requestBody = payload.toString().toRequestBody(mediaType)
 
         val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
-        val targetUrl = if (rawUrl.endsWith("/rewrite")) rawUrl else "${rawUrl.trimEnd('/')}/rewrite"
+        val baseUrl = getCleanBaseUrl(rawUrl)
+        val targetUrl = "$baseUrl/rewrite"
 
         val request = Request.Builder()
             .url(targetUrl)
@@ -1192,7 +1205,9 @@ class RewriteAccessibilityService : AccessibilityService() {
 
         okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Unexpected HTTP code: ${response.code} - ${response.message}")
+                val errBody = response.body?.string() ?: ""
+                Log.e(TAG, "Rewrite failed (${response.code}): $errBody")
+                throw IOException("HTTP ${response.code}: $errBody")
             }
 
             val responseBody = response.body?.string() ?: return@withContext null
@@ -1210,11 +1225,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         val voiceTone = prefs.getString(PREF_VOICE_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
 
         val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
-        val baseUrl = if (rawUrl.contains("/rewrite")) {
-            rawUrl.substringBefore("/rewrite")
-        } else {
-            rawUrl.trimEnd('/')
-        }
+        val baseUrl = getCleanBaseUrl(rawUrl)
         val targetUrl = "$baseUrl/transcribe"
 
         val mediaType = "audio/m4a".toMediaType()
@@ -1231,7 +1242,9 @@ class RewriteAccessibilityService : AccessibilityService() {
 
         okHttpClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("Unexpected HTTP code: ${response.code} - ${response.message}")
+                val errBody = response.body?.string() ?: ""
+                Log.e(TAG, "Transcribe failed (${response.code}): $errBody")
+                throw IOException("HTTP ${response.code}: $errBody")
             }
             val responseBody = response.body?.string() ?: return@withContext null
             val json = JSONObject(responseBody)
