@@ -9,9 +9,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import httpx
 
-# Master default Groq key loaded from environment variables (.env / .env.voice / Vercel)
-GROQ_DEFAULT_KEY = os.environ.get("GROQ_DEFAULT_KEY") or os.environ.get("GROQ_AUDIO_API_KEY") or os.environ.get("GROQ_API_KEY", "")
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger("keyflow-backend")
 
 def load_env_file():
-    """Loads environment variables from .env and .env.voice files if present."""
+    """Loads environment variables from .env and .env.voice files if present (local dev)."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(base_dir, ".env"),
@@ -67,7 +64,16 @@ def load_env_file():
             except Exception as e:
                 logger.warning("Could not read %s: %s", v_path, e)
 
+# Load environment files on startup (for local development)
 load_env_file()
+
+# Master default Groq key loaded strictly from environment variables (.env / .env.voice / Vercel)
+GROQ_DEFAULT_KEY = (
+    os.environ.get("GROQ_DEFAULT_KEY") or
+    os.environ.get("GROQ_AUDIO_API_KEY") or
+    os.environ.get("GROQ_API_KEY") or
+    ""
+).strip()
 
 app = FastAPI(
     title="Keyflow Rewrite API",
