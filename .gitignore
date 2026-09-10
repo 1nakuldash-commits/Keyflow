@@ -1,7 +1,9 @@
 # Environment & API keys
 .env
 *.env
+.env.*
 .env.local
+.env.voice
 
 # Python
 backend/venv/

@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvStatus: TextView
     private lateinit var viewStatusDot: View
     private lateinit var btnOpenAccessibility: Button
+    private lateinit var btnRequestMicPermission: Button
     private lateinit var etBackendUrl: EditText
     private lateinit var btnTestBackend: Button
     private lateinit var tvBackendStatus: TextView
@@ -55,6 +56,7 @@ class MainActivity : AppCompatActivity() {
         tvStatus = findViewById(R.id.tvServiceStatus)
         viewStatusDot = findViewById(R.id.viewStatusDot)
         btnOpenAccessibility = findViewById(R.id.btnOpenAccessibility)
+        btnRequestMicPermission = findViewById(R.id.btnRequestMicPermission)
         etBackendUrl = findViewById(R.id.etBackendUrl)
         btnTestBackend = findViewById(R.id.btnTestBackend)
         tvBackendStatus = findViewById(R.id.tvBackendStatus)
@@ -67,6 +69,18 @@ class MainActivity : AppCompatActivity() {
         btnOpenAccessibility.setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
+        }
+
+        btnRequestMicPermission.setOnClickListener {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(android.Manifest.permission.RECORD_AUDIO),
+                    101
+                )
+            } else {
+                Toast.makeText(this, "Microphone permission is already granted!", Toast.LENGTH_SHORT).show()
+            }
         }
 
         btnTestBackend.setOnClickListener {
@@ -166,6 +180,38 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateServiceStatus()
+        updateMicPermissionStatus()
+    }
+
+    private fun updateMicPermissionStatus() {
+        val hasMicPermission = ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (hasMicPermission) {
+            btnRequestMicPermission.text = "Microphone Access Granted ✓"
+            btnRequestMicPermission.isEnabled = false
+            btnRequestMicPermission.alpha = 0.75f
+        } else {
+            btnRequestMicPermission.text = "Grant Microphone Permission"
+            btnRequestMicPermission.isEnabled = true
+            btnRequestMicPermission.alpha = 1.0f
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101) {
+            updateMicPermissionStatus()
+            if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "Microphone permission granted!", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun updateServiceStatus() {

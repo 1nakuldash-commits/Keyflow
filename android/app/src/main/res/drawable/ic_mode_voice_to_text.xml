@@ -1,0 +1,125 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="1080"
+    android:viewportHeight="1080">
+
+    <!-- Circular Brand Background -->
+    <path
+        android:pathData="M 0,540 a 540,540 0 1,0 1080,0 a 540,540 0 1,0 -1080,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="58"
+                android:startY="0"
+                android:endX="815.5"
+                android:endY="919">
+                <item android:offset="0" android:color="#1198FA" />
+                <item android:offset="1" android:color="#0139C6" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Outer Chat Bracket -->
+    <path
+        android:pathData="M246,696.944 C246,757.83 295.358,807.188 356.244,807.188 H721.557 C782.442,807.188 831.8,757.83 831.8,696.944 V553.758 C831.8,540.127 820.75,529.077 807.119,529.077 C793.488,529.077 782.437,540.127 782.437,553.758 V692.008 C782.437,728.357 752.97,757.825 716.62,757.825 H361.18 C324.83,757.825 295.363,728.357 295.363,692.008 V388.6 C295.363,352.25 324.83,322.783 361.18,322.783 H552.482 C566.113,322.783 577.164,311.733 577.164,298.101 C577.164,284.47 566.113,273.42 552.482,273.42 H356.244 C295.358,273.42 246,322.778 246,383.664 L246,696.944 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="721.567"
+                android:startY="567.431"
+                android:endX="246.861"
+                android:endY="567.431">
+                <item android:offset="0" android:color="#C9E7FB" />
+                <item android:offset="1" android:color="#AEDDFB" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Voice Waveform Bar 1 (Short Left) -->
+    <path
+        android:pathData="M384.65,543.551 V575.173"
+        android:strokeWidth="52.19"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="385.15"
+                android:startY="543.551"
+                android:endX="385.15"
+                android:endY="575.173">
+                <item android:offset="0" android:color="#FAFCFE" />
+                <item android:offset="1" android:color="#93DCFD" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Voice Waveform Bar 2 (Mid-Left) -->
+    <path
+        android:pathData="M470.771,509.316 V612.011"
+        android:strokeWidth="52.19"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="471.271"
+                android:startY="509.316"
+                android:endX="471.271"
+                android:endY="612.011">
+                <item android:offset="0" android:color="#FAFCFE" />
+                <item android:offset="1" android:color="#93DCFD" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Voice Waveform Bar 3 (Tall Center) -->
+    <path
+        android:pathData="M556.89,435.324 V677.297"
+        android:strokeWidth="52.19"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="557.39"
+                android:startY="435.324"
+                android:endX="557.39"
+                android:endY="677.297">
+                <item android:offset="0" android:color="#FAFCFE" />
+                <item android:offset="1" android:color="#93DCFD" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Voice Waveform Bar 4 (Mid-Right) -->
+    <path
+        android:pathData="M643.01,502.938 V617.552"
+        android:strokeWidth="52.19"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="643.51"
+                android:startY="502.938"
+                android:endX="643.51"
+                android:endY="617.552">
+                <item android:offset="0" android:color="#FAFCFE" />
+                <item android:offset="1" android:color="#93DCFD" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Top-Right Sparkle Star -->
+    <path
+        android:pathData="M718.721,256.621 C724.834,241.126 746.764,241.126 752.877,256.621 L753.934,259.308 C768.862,297.156 798.823,327.117 836.671,342.045 L839.358,343.102 C854.853,349.215 854.853,371.145 839.358,377.258 L836.671,378.315 C798.823,393.243 768.862,423.204 753.934,461.052 L752.877,463.739 C746.764,479.234 724.834,479.234 718.721,463.739 L717.664,461.052 C702.736,423.204 672.775,393.243 634.927,378.315 L632.24,377.258 C616.745,371.145 616.745,349.215 632.24,343.102 L634.927,342.045 C672.775,327.117 702.736,297.156 717.664,259.308 L718.721,256.621 Z"
+        android:fillColor="#2FC1FD"
+        android:strokeColor="#1E3A8A"
+        android:strokeWidth="1.0"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+</vector>

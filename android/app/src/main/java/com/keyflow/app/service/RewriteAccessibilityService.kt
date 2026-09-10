@@ -1,5 +1,6 @@
 package com.keyflow.app.service
 
+import android.Manifest
 import android.accessibilityservice.AccessibilityService
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
@@ -7,6 +8,9 @@ import android.animation.ValueAnimator
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.MediaRecorder
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.PixelFormat
@@ -33,6 +37,8 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
+import com.keyflow.app.MainActivity
 import com.keyflow.app.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,10 +47,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlin.math.hypot
@@ -55,17 +64,25 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val TAG = "RewriteService"
         private const val BACKEND_URL = "http://10.0.2.2:8000/rewrite"
         private const val PREFS_KEYFLOW = "keyflow_prefs"
+        private const val KEY_BACKEND_URL = "pref_backend_url"
         private const val PREF_PILL_SNAP_SIDE = "pref_pill_snap_side" // "LEFT" or "RIGHT"
         private const val PREF_PILL_X = "pref_pill_x"
         private const val PREF_PILL_Y_OFFSET = "pref_pill_y_offset"
-        private const val PREF_SELECTED_TONE = "pref_selected_tone"
+        
+        // Mode & Tone configuration
+        const val MODE_VOICE = "VOICE"
+        const val MODE_TEXT = "TEXT"
+        private const val PREF_ACTIVE_MODE = "pref_active_mode"
+        private const val PREF_VOICE_TONE = "pref_voice_tone"
+        private const val PREF_TEXT_TONE = "pref_text_tone"
         private const val DEFAULT_TONE = "simple"
+
         private const val BADGE_SIZE_DP = 44
         private const val ROOT_PADDING_DP = 8
         private const val BADGE_MARGIN_EDGE_DP = 10 // Clean 10dp margin for both pill and popup menu
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 260L
-        private const val DOUBLE_TAP_THRESHOLD_MS = 420L
+        private const val DOUBLE_TAP_THRESHOLD_MS = 260L
         private const val MENU_WIDTH_DP = 132
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
     }
@@ -80,6 +97,15 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var progressBar: ProgressBar? = null
     private var snapAnimator: ValueAnimator? = null
 
+    // Mode State (Voice-to-Text is default)
+    private var activeMode = MODE_VOICE
+
+    // Voice Recording State
+    private var isRecording = false
+    private var mediaRecorder: MediaRecorder? = null
+    private var currentAudioFile: File? = null
+    private var recordingPulseAnimator: ValueAnimator? = null
+
     // Vertical Tone Menu State
     private var toneMenuView: View? = null
     private var isToneMenuAttached = false
@@ -92,6 +118,15 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var lastKnownKeyboardTop = -1
     private var activeDockedKeyboardTop = -1
     private var lastInteractedInputNode: AccessibilityNodeInfo? = null
+
+    private val singleTapRunnable = Runnable {
+        lastTapTime = 0L
+        if (activeMode == MODE_VOICE) {
+            startVoiceRecording()
+        } else {
+            handleTextRewriteClicked()
+        }
+    }
 
     private val keyboardCheckRunnable = Runnable {
         evaluateKeyboardVisibility()
@@ -172,13 +207,59 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
             btnRewrite?.clipToOutline = true
 
+            // Restore active mode (Voice-to-Text is default)
+            val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
+            activeMode = prefs.getString(PREF_ACTIVE_MODE, MODE_VOICE) ?: MODE_VOICE
+            updateModeIcon()
+
             setupDragAndClickGesture(this, btnRewrite ?: this)
         }
     }
 
+    private fun updateModeIcon() {
+        val resId = if (activeMode == MODE_VOICE) {
+            R.drawable.ic_mode_voice_to_text
+        } else {
+            R.drawable.ic_mode_text_to_text
+        }
+        ivIcon?.setImageResource(resId)
+    }
+
     /**
-     * Implements Long-Press-to-Drag with zero jump, tactile haptic feedback,
-     * smooth coordinate tracking, and Magnetic Edge Snapping on release.
+     * Toggles mode between Voice-to-Text and Text-to-Text with smooth 3D flip card physics.
+     */
+    private fun switchMode() {
+        val newMode = if (activeMode == MODE_VOICE) MODE_TEXT else MODE_VOICE
+        activeMode = newMode
+        getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
+            .edit()
+            .putString(PREF_ACTIVE_MODE, activeMode)
+            .apply()
+
+        btnRewrite?.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+
+        // Smooth 3D Y-axis flip animation
+        btnRewrite?.animate()
+            ?.rotationY(90f)
+            ?.setDuration(110)
+            ?.withEndAction {
+                updateModeIcon()
+                btnRewrite?.rotationY = -90f
+                btnRewrite?.animate()
+                    ?.rotationY(0f)
+                    ?.setDuration(110)
+                    ?.start()
+            }
+            ?.start()
+
+        val modeLabel = if (activeMode == MODE_VOICE) "Voice-to-Text Mode" else "Text-to-Text Mode"
+        Toast.makeText(this, "Keyflow: $modeLabel", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Switched active mode to: $activeMode")
+    }
+
+    /**
+     * Implements Long-Press for Tone Menu, Press-to-Drag with Magnetic Snapping,
+     * Double-Tap for Mode Switching, and Single-Tap for Action execution.
      */
     private fun setupDragAndClickGesture(rootView: View, touchTarget: View) {
         var initialTouchRawX = 0f
@@ -197,6 +278,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             if (isDragging) return@Runnable
             longPressTriggered = true
             lastTapTime = 0L
+            mainHandler.removeCallbacks(singleTapRunnable)
 
             // Cancel any ongoing magnetic snap
             snapAnimator?.cancel()
@@ -218,7 +300,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                 }
                 .start()
 
-            // Open the vertical liquid-glass Tone Menu
+            // Open the vertical liquid-glass Tone Menu for the active mode
             showToneMenu()
         }
 
@@ -251,6 +333,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                             // Finger moved past touch slop -> Immediate press and drag!
                             lastTapTime = 0L
                             mainHandler.removeCallbacks(longPressRunnable)
+                            mainHandler.removeCallbacks(singleTapRunnable)
                             isDragging = true
                             isUserDragging = true
                             dismissToneMenu()
@@ -302,10 +385,11 @@ class RewriteAccessibilityService : AccessibilityService() {
 
                     if (isDragging) {
                         lastTapTime = 0L
+                        mainHandler.removeCallbacks(singleTapRunnable)
                         isDragging = false
                         isUserDragging = false
 
-                        // Execute Magnetic Edge Snapping with reduced edge margin (6dp)
+                        // Execute Magnetic Edge Snapping
                         val screenWidth = resources.displayMetrics.widthPixels
                         val totalViewWidth = rootView.width.takeIf { it > 0 } ?: (badgeSizePx + 2 * rootPaddingPx)
                         val pillCenterX = overlayLayoutParams.x + (totalViewWidth / 2)
@@ -319,20 +403,27 @@ class RewriteAccessibilityService : AccessibilityService() {
 
                         animateSnapTo(targetSnapX, snapSide)
                     } else if (longPressTriggered) {
-                        // Hold was triggered and vertical menu is open. Do not trigger rewrite.
+                        // Hold was triggered and vertical menu is open. Do not trigger action.
                         lastTapTime = 0L
+                        mainHandler.removeCallbacks(singleTapRunnable)
                         isUserDragging = false
+                    } else if (isRecording) {
+                        // In voice mode, user is actively recording: tapping finishes recording immediately!
+                        lastTapTime = 0L
+                        mainHandler.removeCallbacks(singleTapRunnable)
+                        isUserDragging = false
+                        stopVoiceRecording()
                     } else {
-                        // Double-tap required to activate rewrite (eliminates typing misclicks)
                         isUserDragging = false
                         val now = SystemClock.uptimeMillis()
                         if (now - lastTapTime <= DOUBLE_TAP_THRESHOLD_MS) {
+                            // Double-Tap detected! Switch Mode (Voice <-> Text)
+                            mainHandler.removeCallbacks(singleTapRunnable)
                             lastTapTime = 0L
-                            touchTarget.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            handleRewriteClicked()
+                            switchMode()
                         } else {
+                            // First tap: Subtle micro-feedback & schedule single-tap action
                             lastTapTime = now
-                            // Subtle micro-feedback on first tap
                             touchTarget.animate()
                                 .scaleX(0.92f)
                                 .scaleY(0.92f)
@@ -341,6 +432,9 @@ class RewriteAccessibilityService : AccessibilityService() {
                                     touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()
                                 }
                                 .start()
+
+                            mainHandler.removeCallbacks(singleTapRunnable)
+                            mainHandler.postDelayed(singleTapRunnable, DOUBLE_TAP_THRESHOLD_MS)
                         }
                     }
                     true
@@ -349,6 +443,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                 MotionEvent.ACTION_CANCEL -> {
                     lastTapTime = 0L
                     mainHandler.removeCallbacks(longPressRunnable)
+                    mainHandler.removeCallbacks(singleTapRunnable)
                     touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(120).start()
                     isDragging = false
                     isUserDragging = false
@@ -870,32 +965,192 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Handles the AI tap: extracts text, queries backend, and injects rewritten text.
+     * Starts voice capture with MediaRecorder in MPEG_4 / AAC at 16kHz.
      */
-    private fun handleRewriteClicked() {
-        val inputNode = findActiveInputNode()
-        if (inputNode == null) {
-            Toast.makeText(this, "No active text field found", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "handleRewriteClicked: findActiveInputNode returned null")
+    private fun startVoiceRecording() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "Microphone permission required for Voice Mode", Toast.LENGTH_LONG).show()
+            try {
+                val intent = Intent(this, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to launch MainActivity for mic permission", e)
+            }
             return
         }
 
-        val originalText = extractTextFromNode(inputNode)
-        if (originalText.isEmpty()) {
-            Toast.makeText(this, "Text field is empty", Toast.LENGTH_SHORT).show()
-            Log.w(TAG, "handleRewriteClicked: extractTextFromNode returned empty text")
+        try {
+            val audioFile = File(cacheDir, "recording_${System.currentTimeMillis()}.m4a")
+            currentAudioFile = audioFile
+
+            val recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                MediaRecorder(this)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+
+            recorder.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(16000)
+                setAudioEncodingBitRate(32000)
+                setOutputFile(audioFile.absolutePath)
+                prepare()
+                start()
+            }
+            mediaRecorder = recorder
+            isRecording = true
+
+            btnRewrite?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            btnRewrite?.setBackgroundResource(R.drawable.bg_pill_recording)
+
+            // Start glowing pulse
+            recordingPulseAnimator?.cancel()
+            recordingPulseAnimator = ValueAnimator.ofFloat(1.0f, 1.15f).apply {
+                duration = 550L
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = DecelerateInterpolator()
+                addUpdateListener { anim ->
+                    val v = anim.animatedValue as Float
+                    btnRewrite?.scaleX = v
+                    btnRewrite?.scaleY = v
+                }
+                start()
+            }
+
+            Toast.makeText(this, "Listening...", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "Started voice recording to ${audioFile.absolutePath}")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start recording", e)
+            Toast.makeText(this, "Failed to start mic: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            stopVoiceRecording(discard = true)
+        }
+    }
+
+    /**
+     * Stops voice recording and sends the audio file to Groq Whisper V3 Turbo for transcription + rewriting.
+     */
+    private fun stopVoiceRecording(discard: Boolean = false) {
+        if (!isRecording && mediaRecorder == null) return
+
+        isRecording = false
+        recordingPulseAnimator?.cancel()
+        btnRewrite?.scaleX = 1.0f
+        btnRewrite?.scaleY = 1.0f
+        btnRewrite?.setBackgroundResource(R.drawable.bg_floating_ai_pill)
+
+        try {
+            mediaRecorder?.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping MediaRecorder", e)
+        } finally {
+            try {
+                mediaRecorder?.release()
+            } catch (_: Exception) {}
+            mediaRecorder = null
+        }
+
+        val audioFile = currentAudioFile
+        if (discard || audioFile == null || !audioFile.exists() || audioFile.length() < 100) {
+            audioFile?.delete()
+            currentAudioFile = null
             return
         }
 
-        Log.d(TAG, "Starting rewrite for text: '$originalText'")
+        btnRewrite?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         setLoading(true)
 
         serviceScope.launch {
             try {
-                val rewrittenText = requestRewriteFromBackend(originalText)
+                val response = requestTranscribeFromBackend(audioFile)
+                val finalText = response?.second ?: response?.first
+                if (!finalText.isNullOrBlank()) {
+                    val inputNode = findActiveInputNode()
+                    if (inputNode != null) {
+                        val fullText = extractTextFromNode(inputNode)
+                        val selStart = inputNode.textSelectionStart
+                        val selEnd = inputNode.textSelectionEnd
+                        val hasSelection = selStart in 0 until selEnd && selEnd <= fullText.length
+
+                        if (hasSelection) {
+                            val newFull = fullText.substring(0, selStart) + finalText + fullText.substring(selEnd)
+                            injectText(inputNode, newFull, newCursorPos = selStart + finalText.length)
+                        } else if (fullText.isNotEmpty()) {
+                            val separator = if (fullText.endsWith(" ") || fullText.endsWith("\n")) "" else " "
+                            val newFull = fullText + separator + finalText
+                            injectText(inputNode, newFull, newCursorPos = newFull.length)
+                        } else {
+                            injectText(inputNode, finalText, newCursorPos = finalText.length)
+                        }
+                    } else {
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Keyflow Voice", finalText))
+                        Toast.makeText(this@RewriteAccessibilityService, "Transcribed! Copied to clipboard.", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(this@RewriteAccessibilityService, "Could not understand voice", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Voice transcription failed", e)
+                Toast.makeText(this@RewriteAccessibilityService, "Voice error: ${e.localizedMessage ?: "Failed"}", Toast.LENGTH_SHORT).show()
+            } finally {
+                setLoading(false)
+                audioFile.delete()
+                currentAudioFile = null
+            }
+        }
+    }
+
+    /**
+     * Handles single-tap in Text Mode: selection-aware rewrite of full text or highlighted snippet.
+     */
+    private fun handleTextRewriteClicked() {
+        val inputNode = findActiveInputNode()
+        if (inputNode == null) {
+            Toast.makeText(this, "No active text field found", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "handleTextRewriteClicked: findActiveInputNode returned null")
+            return
+        }
+
+        val fullText = extractTextFromNode(inputNode)
+        if (fullText.isEmpty()) {
+            Toast.makeText(this, "Text field is empty", Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "handleTextRewriteClicked: extractTextFromNode returned empty text")
+            return
+        }
+
+        // Selection-Aware: Check if user has selected a specific segment
+        val selStart = inputNode.textSelectionStart
+        val selEnd = inputNode.textSelectionEnd
+        val hasSelection = selStart in 0 until selEnd && selEnd <= fullText.length
+
+        val textToRewrite = if (hasSelection) {
+            fullText.substring(selStart, selEnd)
+        } else {
+            fullText
+        }
+
+        Log.d(TAG, "Starting text rewrite [selection=$hasSelection]: '$textToRewrite'")
+        setLoading(true)
+
+        serviceScope.launch {
+            try {
+                val rewrittenText = requestRewriteFromBackend(textToRewrite)
                 if (!rewrittenText.isNullOrBlank()) {
                     val targetNode = if (inputNode.refresh()) inputNode else (findActiveInputNode() ?: inputNode)
-                    injectText(targetNode, rewrittenText)
+                    if (hasSelection) {
+                        // Replace only the selected range
+                        val newFullText = fullText.substring(0, selStart) + rewrittenText + fullText.substring(selEnd)
+                        injectText(targetNode, newFullText, newCursorPos = selStart + rewrittenText.length)
+                    } else {
+                        injectText(targetNode, rewrittenText, newCursorPos = rewrittenText.length)
+                    }
                 } else {
                     Toast.makeText(this@RewriteAccessibilityService, "Empty response from engine", Toast.LENGTH_SHORT).show()
                 }
@@ -913,11 +1168,11 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Executes asynchronous OkHttp POST call to the FastAPI backend.
+     * Executes asynchronous OkHttp POST call to the FastAPI backend for text rewriting.
      */
     private suspend fun requestRewriteFromBackend(text: String): String? = withContext(Dispatchers.IO) {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-        val selectedTone = prefs.getString(PREF_SELECTED_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
+        val selectedTone = prefs.getString(PREF_TEXT_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
 
         val payload = JSONObject().apply {
             put("text", text)
@@ -927,7 +1182,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody = payload.toString().toRequestBody(mediaType)
 
-        val rawUrl = prefs.getString("pref_backend_url", BACKEND_URL) ?: BACKEND_URL
+        val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
         val targetUrl = if (rawUrl.endsWith("/rewrite")) rawUrl else "${rawUrl.trimEnd('/')}/rewrite"
 
         val request = Request.Builder()
@@ -947,22 +1202,62 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Executes multipart audio upload to /transcribe endpoint.
+     * Returns Pair(transcribedText, rewrittenText).
+     */
+    private suspend fun requestTranscribeFromBackend(audioFile: File): Pair<String, String>? = withContext(Dispatchers.IO) {
+        val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
+        val voiceTone = prefs.getString(PREF_VOICE_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
+
+        val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
+        val baseUrl = if (rawUrl.contains("/rewrite")) {
+            rawUrl.substringBefore("/rewrite")
+        } else {
+            rawUrl.trimEnd('/')
+        }
+        val targetUrl = "$baseUrl/transcribe"
+
+        val mediaType = "audio/m4a".toMediaType()
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("file", audioFile.name, audioFile.asRequestBody(mediaType))
+            .addFormDataPart("tone", voiceTone)
+            .build()
+
+        val request = Request.Builder()
+            .url(targetUrl)
+            .post(requestBody)
+            .build()
+
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("Unexpected HTTP code: ${response.code} - ${response.message}")
+            }
+            val responseBody = response.body?.string() ?: return@withContext null
+            val json = JSONObject(responseBody)
+            val transcribed = json.optString("transcribed_text", "")
+            val rewritten = json.optString("rewritten_text", transcribed)
+            Pair(transcribed, rewritten)
+        }
+    }
+
+    /**
      * Injects replacement text into the target node.
      * Hardened multi-stage pipeline:
      * 1. Immediate clipboard priming with rewritten text.
      * 2. Comprehensive candidate collection (target, parent, siblings, children).
-     * 3. ACTION_SET_TEXT across candidate nodes.
-     * 4. Safe-range selection (0..minOf(length, 4000)) + ACTION_PASTE.
+     * 3. ACTION_SET_TEXT across candidate nodes with precise cursor placement.
+     * 4. Safe-range selection + ACTION_PASTE.
      * 5. Click + ACTION_PASTE for hybrid frameworks (Flutter, Rapido, React Native).
      * 6. Safety Net: User-friendly clipboard prompt.
      */
-    private fun injectText(targetNode: AccessibilityNodeInfo, newText: String) {
+    private fun injectText(targetNode: AccessibilityNodeInfo, newText: String, newCursorPos: Int = newText.length) {
         Log.d(TAG, "Attempting text injection into node: class=${targetNode.className}")
 
         // 1. Immediately prime system clipboard so user has it ready regardless of injection outcome
         try {
             val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("Keyflow Rewrite", newText)
+            val clip = ClipData.newPlainText("Keyflow", newText)
             clipboard.setPrimaryClip(clip)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to copy to clipboard", e)
@@ -1004,11 +1299,12 @@ class RewriteAccessibilityService : AccessibilityService() {
             )
         }
 
-        fun placeCursorAtEnd(node: AccessibilityNodeInfo) {
+        fun placeCursorAt(node: AccessibilityNodeInfo, pos: Int) {
             try {
+                val clamped = pos.coerceIn(0, newText.length)
                 val selArgs = Bundle().apply {
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, newText.length)
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, newText.length)
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, clamped)
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, clamped)
                 }
                 node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selArgs)
             } catch (e: Exception) {
@@ -1020,7 +1316,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             if (node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }) {
                 if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)) {
                     Log.d(TAG, "Successfully injected text via ACTION_SET_TEXT on ${node.className}")
-                    placeCursorAtEnd(node)
+                    placeCursorAt(node, newCursorPos)
                     return
                 }
             }
@@ -1029,7 +1325,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         // Try direct ACTION_SET_TEXT on targetNode even if not advertised in actionList
         if (targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)) {
             Log.d(TAG, "Successfully injected text via direct ACTION_SET_TEXT on targetNode")
-            placeCursorAtEnd(targetNode)
+            placeCursorAt(targetNode, newCursorPos)
             return
         }
 
@@ -1085,8 +1381,8 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     /**
      * Displays the minimal ChatGPT-inspired vertical tone selector menu anchored dynamically
-     * above or below the floating pill based on screen placement, matching the edge padding
-     * identically (10dp margin) with zero clipping.
+     * above or below the floating pill based on screen placement.
+     * Selects and saves tone independently for the currently active mode (Voice or Text).
      */
     private fun showToneMenu() {
         if (!isOverlayAttached || overlayView == null) return
@@ -1102,7 +1398,8 @@ class RewriteAccessibilityService : AccessibilityService() {
         val chipEmail = menuView.findViewById<TextView>(R.id.chipToneEmail)
 
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-        val currentTone = prefs.getString(PREF_SELECTED_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
+        val tonePrefKey = if (activeMode == MODE_VOICE) PREF_VOICE_TONE else PREF_TEXT_TONE
+        val currentTone = prefs.getString(tonePrefKey, DEFAULT_TONE) ?: DEFAULT_TONE
 
         updateToneChipsHighlight(currentTone, chipSimple, chipFormal, chipPro, chipEmail)
 
@@ -1129,9 +1426,6 @@ class RewriteAccessibilityService : AccessibilityService() {
         val pillCenterY = pillVisibleTop + (badgeSizePx / 2)
         val isPillOnLeft = (pillScreenLeft + (badgeSizePx / 2)) < screenWidth / 2
 
-        // Dynamic vertical direction:
-        // If pill is in the upper half of screen (or insufficient space above), open DOWNWARD.
-        // If pill is in the lower half (e.g. above keyboard), open UPWARD.
         val gapPx = (8 * density).toInt()
         val minSafeTopPx = (36 * density).toInt() // Safe status bar clearance
         val maxAllowedBottom = if (activeDockedKeyboardTop > 0) {
@@ -1154,16 +1448,12 @@ class RewriteAccessibilityService : AccessibilityService() {
         val pivotY: Float
         if (openDownward) {
             targetY = (pillVisibleBottom + gapPx).coerceAtMost(maxAllowedBottom - menuHeightPx)
-            pivotY = 0f // Bloom downward from the bottom of the pill
+            pivotY = 0f // Bloom downward from bottom of pill
         } else {
             targetY = (pillVisibleTop - menuHeightPx - gapPx).coerceAtLeast(minSafeTopPx)
-            pivotY = menuHeightPx.toFloat() // Bloom upward from the top of the pill
+            pivotY = menuHeightPx.toFloat() // Bloom upward from top of pill
         }
 
-        // Horizontal alignment:
-        // Match the pill's edge padding identically!
-        // When on right: gravity = Gravity.TOP or Gravity.RIGHT, x = badgeMarginEdgePx
-        // When on left: gravity = Gravity.TOP or Gravity.LEFT, x = badgeMarginEdgePx
         val gravity = Gravity.TOP or (if (isPillOnLeft) Gravity.LEFT else Gravity.RIGHT)
         val targetX = badgeMarginEdgePx
         val pivotX = if (isPillOnLeft) 0f else menuWidthPx.toFloat()
@@ -1192,7 +1482,6 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Apple liquid glass bloom physics
         menuView.alpha = 0f
         menuView.scaleX = 0.72f
         menuView.scaleY = 0.72f
@@ -1209,7 +1498,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                 .setDuration(190)
                 .setInterpolator(OvershootInterpolator(1.2f))
                 .start()
-            Log.d(TAG, "Tone menu attached: direction=${if (openDownward) "DOWN" else "UP"}, X=$targetX, Y=$targetY, side=${if (isPillOnLeft) "LEFT" else "RIGHT"}")
+            Log.d(TAG, "Tone menu attached for mode $activeMode: direction=${if (openDownward) "DOWN" else "UP"}, X=$targetX, Y=$targetY")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach tone menu to WindowManager", e)
             toneMenuView = null
@@ -1247,18 +1536,20 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     private fun onToneSelected(tone: String) {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
-        prefs.edit().putString(PREF_SELECTED_TONE, tone).apply()
+        val tonePrefKey = if (activeMode == MODE_VOICE) PREF_VOICE_TONE else PREF_TEXT_TONE
+        prefs.edit().putString(tonePrefKey, tone).apply()
 
         updateToneChipsHighlight(tone)
         btnRewrite?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
 
+        val modeLabel = if (activeMode == MODE_VOICE) "Voice" else "Text"
         val displayName = when (tone) {
-            "formal" -> "Formal Mode"
-            "professional" -> "Professional Mode"
-            "email" -> "Email Mode"
-            else -> "Simple Mode"
+            "formal" -> "Formal"
+            "professional" -> "Professional"
+            "email" -> "Email"
+            else -> "Simple"
         }
-        Toast.makeText(applicationContext, "Keyflow: $displayName active", Toast.LENGTH_SHORT).show()
+        Toast.makeText(applicationContext, "Keyflow [$modeLabel]: $displayName active", Toast.LENGTH_SHORT).show()
 
         mainHandler.postDelayed({
             dismissToneMenu()
@@ -1292,6 +1583,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.w(TAG, "Keyflow RewriteAccessibilityService interrupted")
+        stopVoiceRecording(discard = true)
         hideOverlaySmoothly()
         lastInteractedInputNode?.recycle()
         lastInteractedInputNode = null
@@ -1299,6 +1591,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopVoiceRecording(discard = true)
         hideOverlaySmoothly()
         lastInteractedInputNode?.recycle()
         lastInteractedInputNode = null

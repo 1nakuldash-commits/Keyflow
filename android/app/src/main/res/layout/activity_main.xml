@@ -83,11 +83,22 @@
         android:backgroundTint="@color/accent_primary"
         android:fontFamily="sans-serif-medium" />
 
+    <!-- Mic Permission Button -->
+    <Button
+        android:id="@+id/btnRequestMicPermission"
+        android:layout_width="match_parent"
+        android:layout_height="46dp"
+        android:layout_marginTop="8dp"
+        android:text="Grant Microphone Permission"
+        android:textColor="@color/text_primary"
+        android:backgroundTint="@color/button_bg"
+        android:fontFamily="sans-serif-medium" />
+
     <!-- Backend Server Settings -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="20dp"
         android:text="BACKEND SERVER SETTINGS"
         android:textSize="11sp"
         android:letterSpacing="0.1"
@@ -154,7 +165,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="20dp"
         android:text="TEST PLAYGROUND"
         android:textSize="11sp"
         android:letterSpacing="0.1"
@@ -165,7 +176,7 @@
     <EditText
         android:id="@+id/etTestInput"
         android:layout_width="match_parent"
-        android:layout_height="80dp"
+        android:layout_height="70dp"
         android:layout_marginTop="8dp"
         android:background="@drawable/bg_toolbar_glass"
         android:padding="12dp"
@@ -180,7 +191,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="Tap above to open keyboard. Keyflow docks above Gboard:\n• Single-tap: Instant rewrite with active tone\n• Click &amp; hold: Vertical liquid-glass tone selector\n• Press &amp; drag: Reposition anywhere smoothly"
+        android:text="Tap above to open keyboard. Keyflow docks above Gboard:\n• Default mode: Voice-to-Text (tap to record, tap to stop &amp; transcribe)\n• Double-tap: Toggle between Voice and Text modes\n• Click &amp; hold: Vertical liquid-glass tone selector\n• Text Selection: Rewrites highlighted text in-place"
         android:textSize="12sp"
         android:textColor="@color/text_secondary"
         android:lineSpacingExtra="2dp" />
