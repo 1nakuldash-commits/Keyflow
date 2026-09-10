@@ -5,16 +5,24 @@ import android.accessibilityservice.AccessibilityService
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaRecorder
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -37,6 +45,7 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.keyflow.app.MainActivity
 import com.keyflow.app.R
@@ -85,6 +94,10 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val DOUBLE_TAP_THRESHOLD_MS = 260L
         private const val MENU_WIDTH_DP = 132
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
+
+        private const val RECORDING_CHANNEL_ID = "keyflow_voice_channel"
+        private const val RECORDING_NOTIFICATION_ID = 1001
+        private const val MIN_RECORDING_DURATION_MS = 650L
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -102,6 +115,8 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     // Voice Recording & Visualizer State
     private var isRecording = false
+    private var recordingStartTime = 0L
+    private var audioFocusRequest: AudioFocusRequest? = null
     private var mediaRecorder: MediaRecorder? = null
     private var currentAudioFile: File? = null
     private var layoutVoiceVisualizer: View? = null
@@ -114,6 +129,13 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var silenceDotBreathingAnimator: ValueAnimator? = null
     private var smoothedAmplitude = 0f
     private val AMPLITUDE_THRESHOLD = 3200
+
+    private val maxRecordingTimeoutRunnable = Runnable {
+        if (isRecording) {
+            Toast.makeText(this@RewriteAccessibilityService, "Recording limit reached (60s)", Toast.LENGTH_SHORT).show()
+            stopVoiceRecording(discard = false)
+        }
+    }
 
     // Text Selection Tracking (preserves selection when overlay is tapped)
     private var lastSelectionStart = -1
@@ -200,8 +222,24 @@ class RewriteAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d(TAG, "Keyflow RewriteAccessibilityService connected")
+        createNotificationChannel()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         initOverlayView()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                RECORDING_CHANNEL_ID,
+                "Keyflow Voice Dictation",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "Active voice dictation recording"
+                setShowBadge(false)
+            }
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager?.createNotificationChannel(channel)
+        }
     }
 
     private fun initOverlayView() {
@@ -428,21 +466,30 @@ class RewriteAccessibilityService : AccessibilityService() {
                         mainHandler.removeCallbacks(singleTapRunnable)
                         isUserDragging = false
                     } else if (isRecording) {
-                        // In voice mode, user is actively recording: tapping finishes recording immediately!
+                        // User tapped while recording is active
+                        val elapsed = SystemClock.uptimeMillis() - recordingStartTime
                         lastTapTime = 0L
                         mainHandler.removeCallbacks(singleTapRunnable)
                         isUserDragging = false
-                        stopVoiceRecording()
+
+                        if (elapsed <= DOUBLE_TAP_THRESHOLD_MS) {
+                            // Tap arrived within double-tap window -> switch mode!
+                            stopVoiceRecording(discard = true)
+                            switchMode()
+                        } else if (elapsed < MIN_RECORDING_DURATION_MS) {
+                            // Micro-tap (< 650ms) -> discard without uploading silence
+                            stopVoiceRecording(discard = true)
+                            Toast.makeText(this@RewriteAccessibilityService, "Tap and speak a sentence", Toast.LENGTH_SHORT).show()
+                        } else {
+                            // Spoke and tapped to finish!
+                            stopVoiceRecording(discard = false)
+                        }
                     } else {
                         isUserDragging = false
                         val now = SystemClock.uptimeMillis()
-                        if (now - lastTapTime <= DOUBLE_TAP_THRESHOLD_MS) {
-                            // Double-Tap detected! Switch Mode (Voice <-> Text)
-                            mainHandler.removeCallbacks(singleTapRunnable)
-                            lastTapTime = 0L
-                            switchMode()
-                        } else {
-                            // First tap: Subtle micro-feedback & schedule single-tap action
+
+                        if (activeMode == MODE_VOICE) {
+                            // Zero-latency instant start for Voice Mode
                             lastTapTime = now
                             touchTarget.animate()
                                 .scaleX(0.92f)
@@ -452,9 +499,29 @@ class RewriteAccessibilityService : AccessibilityService() {
                                     touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()
                                 }
                                 .start()
+                            startVoiceRecording()
+                        } else {
+                            // Text Mode: standard double-tap detection
+                            if (now - lastTapTime <= DOUBLE_TAP_THRESHOLD_MS) {
+                                // Double-Tap detected! Switch Mode (Text -> Voice)
+                                mainHandler.removeCallbacks(singleTapRunnable)
+                                lastTapTime = 0L
+                                switchMode()
+                            } else {
+                                // First tap: Subtle micro-feedback & schedule single-tap action
+                                lastTapTime = now
+                                touchTarget.animate()
+                                    .scaleX(0.92f)
+                                    .scaleY(0.92f)
+                                    .setDuration(80)
+                                    .withEndAction {
+                                        touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()
+                                    }
+                                    .start()
 
-                            mainHandler.removeCallbacks(singleTapRunnable)
-                            mainHandler.postDelayed(singleTapRunnable, DOUBLE_TAP_THRESHOLD_MS)
+                                mainHandler.removeCallbacks(singleTapRunnable)
+                                mainHandler.postDelayed(singleTapRunnable, DOUBLE_TAP_THRESHOLD_MS)
+                            }
                         }
                     }
                     true
@@ -1076,7 +1143,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     /**
      * Starts voice capture with MediaRecorder in MPEG_4 / AAC at 16kHz Mono 64kbps,
-     * utilizing VOICE_RECOGNITION DSP and activating the live amplitude visualizer.
+     * running in an Android 14 compliant Foreground Service with Audio Focus.
      */
     private fun startVoiceRecording() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -1093,45 +1160,71 @@ class RewriteAccessibilityService : AccessibilityService() {
         }
 
         try {
+            // 1. Request Audio Focus so background media ducks or pauses cleanly
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val focusReq = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setOnAudioFocusChangeListener { /* no-op */ }
+                    .build()
+                audioManager?.requestAudioFocus(focusReq)
+                audioFocusRequest = focusReq
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager?.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            }
+
+            // 2. Start Foreground Service with MICROPHONE type for Android 14 compliance
+            createNotificationChannel()
+            val notification = NotificationCompat.Builder(this, RECORDING_CHANNEL_ID)
+                .setContentTitle("Keyflow Voice")
+                .setContentText("Listening...")
+                .setSmallIcon(R.drawable.ic_mode_voice_to_text)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    RECORDING_NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            } else {
+                startForeground(RECORDING_NOTIFICATION_ID, notification)
+            }
+
             val audioFile = File(cacheDir, "recording_${System.currentTimeMillis()}.m4a")
             currentAudioFile = audioFile
 
-            val recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(this)
             } else {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }
 
-            try {
-                recorder.apply {
-                    setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
-                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                    setAudioChannels(1)
-                    setAudioSamplingRate(16000)
-                    setAudioEncodingBitRate(64000)
-                    setOutputFile(audioFile.absolutePath)
-                    prepare()
-                    start()
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "VOICE_RECOGNITION failed, falling back to MIC source", e)
-                recorder.reset()
-                recorder.apply {
-                    setAudioSource(MediaRecorder.AudioSource.MIC)
-                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                    setAudioChannels(1)
-                    setAudioSamplingRate(16000)
-                    setAudioEncodingBitRate(64000)
-                    setOutputFile(audioFile.absolutePath)
-                    prepare()
-                    start()
-                }
+            // Direct hardware microphone input for maximum clarity across all devices
+            recorder.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioChannels(1)
+                setAudioSamplingRate(16000)
+                setAudioEncodingBitRate(64000)
+                setOutputFile(audioFile.absolutePath)
+                prepare()
+                start()
             }
+
             mediaRecorder = recorder
             isRecording = true
+            recordingStartTime = SystemClock.uptimeMillis()
             smoothedAmplitude = 0f
 
             btnRewrite?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -1148,7 +1241,10 @@ class RewriteAccessibilityService : AccessibilityService() {
             mainHandler.removeCallbacks(visualizerRunnable)
             mainHandler.post(visualizerRunnable)
 
-            Toast.makeText(this, "Listening...", Toast.LENGTH_SHORT).show()
+            // Safety 60s timeout
+            mainHandler.removeCallbacks(maxRecordingTimeoutRunnable)
+            mainHandler.postDelayed(maxRecordingTimeoutRunnable, 60_000L)
+
             Log.d(TAG, "Started voice recording to ${audioFile.absolutePath}")
 
         } catch (e: Exception) {
@@ -1164,9 +1260,39 @@ class RewriteAccessibilityService : AccessibilityService() {
     private fun stopVoiceRecording(discard: Boolean = false) {
         if (!isRecording && mediaRecorder == null) return
 
+        val duration = SystemClock.uptimeMillis() - recordingStartTime
         isRecording = false
         mainHandler.removeCallbacks(visualizerRunnable)
+        mainHandler.removeCallbacks(maxRecordingTimeoutRunnable)
         stopSilenceBreathingAnimation()
+
+        // 1. Release Foreground Service and Notification
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            notificationManager?.cancel(RECORDING_NOTIFICATION_ID)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping foreground service", e)
+        }
+
+        // 2. Abandon Audio Focus
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { audioManager?.abandonAudioFocusRequest(it) }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager?.abandonAudioFocus(null)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error abandoning audio focus", e)
+        }
 
         // Reset visualizer views and restore emblem icon & default pill background
         layoutVoiceVisualizer?.visibility = View.GONE
@@ -1189,7 +1315,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         }
 
         val audioFile = currentAudioFile
-        if (discard || audioFile == null || !audioFile.exists() || audioFile.length() < 100) {
+        if (discard || audioFile == null || !audioFile.exists() || audioFile.length() < 100 || duration < MIN_RECORDING_DURATION_MS) {
             audioFile?.delete()
             currentAudioFile = null
             return
@@ -1238,7 +1364,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                         Toast.makeText(this@RewriteAccessibilityService, "Transcribed! Copied to clipboard.", Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    Toast.makeText(this@RewriteAccessibilityService, "Could not understand voice", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@RewriteAccessibilityService, "No speech detected. Please speak closer to mic.", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Voice transcription failed", e)

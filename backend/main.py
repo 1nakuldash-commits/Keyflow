@@ -371,19 +371,58 @@ def mock_local_rewrite(text: str, tone: str) -> str:
         cleaned += "."
     return cleaned
 
+# Known Whisper silence hallucinations produced when audio lacks clear speech energy
+WHISPER_SILENCE_HALLUCINATIONS = {
+    "thank you for watching",
+    "thank you for watching.",
+    "thank you for watching!",
+    "thanks for watching",
+    "thanks for watching.",
+    "thanks for watching!",
+    "thank you",
+    "thank you.",
+    "thank you!",
+    "please subscribe",
+    "please subscribe.",
+    "please subscribe!",
+    "subscribe to my channel",
+    "subtitles by",
+    "you",
+    "you.",
+    "bye",
+    "bye.",
+    ".",
+    "...",
+    "!"
+}
+
+def is_silence_hallucination(text: str) -> bool:
+    """Detects whether Whisper text is a known silence/outro hallucination."""
+    if not text:
+        return True
+    cleaned = text.lower().strip().rstrip(".!? \t\n")
+    if not cleaned or cleaned in WHISPER_SILENCE_HALLUCINATIONS or text.strip() in WHISPER_SILENCE_HALLUCINATIONS:
+        return True
+    clean_no_punct = re.sub(r"[^\w\s]", "", cleaned).strip()
+    return clean_no_punct in {
+        "thank you for watching",
+        "thanks for watching",
+        "thank you",
+        "please subscribe",
+        "subscribe to my channel",
+        "subtitles by",
+        "you",
+        "bye",
+        ""
+    }
+
 async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str) -> Optional[str]:
-    """Transcribes audio using Groq's whisper-large-v3 with fallback to whisper-large-v3-turbo."""
+    """Transcribes and translates audio to fluent English using Groq's whisper-large-v3.
+    Routes through /audio/translations for direct multilingual translation (Hindi/Hinglish -> English)."""
     clean_key = (api_key or "").strip()
     if not clean_key:
         return None
 
-    url = "https://api.groq.com/openai/v1/audio/transcriptions"
-    headers = {
-        "Authorization": f"Bearer {clean_key}",
-        "User-Agent": "Keyflow/1.0"
-    }
-    
-    # Determine MIME type based on extension
     ext = os.path.splitext(filename or "")[1].lower()
     mime_map = {
         ".m4a": "audio/m4a",
@@ -397,18 +436,22 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str)
     mime = mime_map.get(ext, "audio/m4a")
     safe_name = filename if filename else "recording.m4a"
 
-    # Prioritize whisper-large-v3 for unmatched Hinglish/Hindi mixed language fidelity
-    whisper_models = ["whisper-large-v3", "whisper-large-v3-turbo"]
     prompt = (
         "Keyflow dictation: Rapido, WhatsApp, invoice, meeting, presentation, check, "
         "bhai, yaar, theek hai, kal, aaj, payment, cab, location, numbers, times, 10 min, please."
     )
 
+    headers = {
+        "Authorization": f"Bearer {clean_key}",
+        "User-Agent": "Keyflow/1.0"
+    }
+
     async with httpx.AsyncClient(timeout=15.0) as client:
-        for model_name in whisper_models:
-            files = {
-                "file": (safe_name, audio_bytes, mime)
-            }
+        # Tier 1: Groq /audio/translations endpoint
+        # Natively translates any spoken language (Hindi, Hinglish, English, etc.) into clean English
+        translation_url = "https://api.groq.com/openai/v1/audio/translations"
+        for model_name in ["whisper-large-v3", "whisper-large-v3-turbo"]:
+            files = {"file": (safe_name, audio_bytes, mime)}
             data = {
                 "model": model_name,
                 "prompt": prompt,
@@ -416,18 +459,44 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str)
                 "temperature": "0.0"
             }
             try:
-                res = await client.post(url, headers=headers, files=files, data=data)
+                res = await client.post(translation_url, headers=headers, files=files, data=data)
                 if res.status_code == 200:
-                    result_json = res.json()
-                    text = result_json.get("text", "").strip()
-                    if text:
-                        logger.info("Groq Whisper [%s] success (%d bytes): '%s'", model_name, len(audio_bytes), text[:80])
+                    text = res.json().get("text", "").strip()
+                    if text and not is_silence_hallucination(text):
+                        logger.info("Groq Whisper Translation [%s] success (%d bytes): '%s'", model_name, len(audio_bytes), text[:80])
                         return text
+                    elif is_silence_hallucination(text):
+                        logger.warning("Groq Whisper Translation [%s] detected silence hallucination: '%s'", model_name, text)
+                        return ""
                 else:
-                    logger.warning("Groq Whisper [%s] returned HTTP %d: %s", model_name, res.status_code, res.text[:200])
+                    logger.warning("Groq Whisper Translation [%s] returned HTTP %d: %s", model_name, res.status_code, res.text[:200])
             except Exception as e:
-                logger.warning("Groq Whisper [%s] failed: %s", model_name, e)
-    return None
+                logger.warning("Groq Whisper Translation [%s] failed: %s", model_name, e)
+
+        # Tier 2 Fallback: Groq /audio/transcriptions endpoint
+        transcription_url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        for model_name in ["whisper-large-v3", "whisper-large-v3-turbo"]:
+            files = {"file": (safe_name, audio_bytes, mime)}
+            data = {
+                "model": model_name,
+                "prompt": prompt,
+                "response_format": "json",
+                "temperature": "0.0"
+            }
+            try:
+                res = await client.post(transcription_url, headers=headers, files=files, data=data)
+                if res.status_code == 200:
+                    text = res.json().get("text", "").strip()
+                    if text and not is_silence_hallucination(text):
+                        logger.info("Groq Whisper Transcription [%s] success (%d bytes): '%s'", model_name, len(audio_bytes), text[:80])
+                        return text
+                    elif is_silence_hallucination(text):
+                        logger.warning("Groq Whisper Transcription [%s] detected silence hallucination: '%s'", model_name, text)
+                        return ""
+            except Exception as e:
+                logger.warning("Groq Whisper Transcription [%s] failed: %s", model_name, e)
+
+    return ""
 
 async def perform_rewrite_pipeline(input_text: str, tone: str) -> tuple[str, str]:
     """Executes multi-model cascade (Groq -> Gemini -> local fallback). Returns (rewritten_text, provider)."""
@@ -482,8 +551,8 @@ async def execute_transcribe(
     filename: str,
     selected_tone: str
 ) -> TranscribeResponse:
-    if not audio_bytes:
-        raise HTTPException(status_code=400, detail="No audio file or data provided in request")
+    if not audio_bytes or len(audio_bytes) < 400:
+        raise HTTPException(status_code=400, detail="Audio file too short or empty")
 
     audio_key = os.environ.get("GROQ_AUDIO_API_KEY") or os.environ.get("GROQ_API_KEY") or GROQ_DEFAULT_KEY
     if not audio_key:
@@ -493,10 +562,17 @@ async def execute_transcribe(
     safe_name = filename or "recording.m4a"
     logger.info("Execute transcribe (%d bytes, filename=%s, tone=%s)", len(audio_bytes), safe_name, norm_tone)
 
-    # 1. Transcribe with Groq whisper-large-v3-turbo (with whisper-large-v3 fallback)
+    # 1. Transcribe / Translate with Groq whisper-large-v3
     transcribed_text = await transcribe_audio_groq(audio_bytes, safe_name, audio_key)
     if not transcribed_text:
-        raise HTTPException(status_code=502, detail="Failed to transcribe audio with Groq Whisper API")
+        logger.info("No valid speech detected in audio file (silence or noise)")
+        return TranscribeResponse(
+            transcribed_text="",
+            rewritten_text="",
+            tone=norm_tone,
+            provider="whisper-large-v3",
+            rewrite_provider="none"
+        )
 
     logger.info("Transcribed text: '%s'", transcribed_text)
 
@@ -507,7 +583,7 @@ async def execute_transcribe(
         transcribed_text=transcribed_text,
         rewritten_text=rewritten_text or transcribed_text,
         tone=norm_tone,
-        provider="whisper-large-v3-turbo",
+        provider="whisper-large-v3",
         rewrite_provider=rewrite_provider
     )
 
