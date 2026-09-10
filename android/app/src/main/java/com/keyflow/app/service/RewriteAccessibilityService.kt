@@ -65,6 +65,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val BADGE_MARGIN_EDGE_DP = 6 // Clean 6dp spacing hugging screen edge
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 260L
+        private const val DOUBLE_TAP_THRESHOLD_MS = 320L
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
     }
 
@@ -85,6 +86,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var isOverlayAttached = false
     private var isHiding = false
     private var isUserDragging = false
+    private var lastTapTime = 0L
     private var lastKeyboardTopY = -1
     private var lastKnownKeyboardTop = -1
     private var activeDockedKeyboardTop = -1
@@ -193,6 +195,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         val longPressRunnable = Runnable {
             if (isDragging) return@Runnable
             longPressTriggered = true
+            lastTapTime = 0L
 
             // Cancel any ongoing magnetic snap
             snapAnimator?.cancel()
@@ -245,6 +248,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                         val moveDist = hypot((event.rawX - initialTouchRawX).toDouble(), (event.rawY - initialTouchRawY).toDouble())
                         if (moveDist > touchSlop) {
                             // Finger moved past touch slop -> Immediate press and drag!
+                            lastTapTime = 0L
                             mainHandler.removeCallbacks(longPressRunnable)
                             isDragging = true
                             isUserDragging = true
@@ -296,6 +300,7 @@ class RewriteAccessibilityService : AccessibilityService() {
                         .start()
 
                     if (isDragging) {
+                        lastTapTime = 0L
                         isDragging = false
                         isUserDragging = false
 
@@ -314,16 +319,34 @@ class RewriteAccessibilityService : AccessibilityService() {
                         animateSnapTo(targetSnapX, snapSide)
                     } else if (longPressTriggered) {
                         // Hold was triggered and vertical menu is open. Do not trigger rewrite.
+                        lastTapTime = 0L
                         isUserDragging = false
                     } else {
-                        // Instant Single Tap (0ms latency, double-tap delay eliminated!)
+                        // Double-tap required to activate rewrite (eliminates typing misclicks)
                         isUserDragging = false
-                        handleRewriteClicked()
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastTapTime <= DOUBLE_TAP_THRESHOLD_MS) {
+                            lastTapTime = 0L
+                            touchTarget.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            handleRewriteClicked()
+                        } else {
+                            lastTapTime = now
+                            // Subtle micro-feedback on first tap
+                            touchTarget.animate()
+                                .scaleX(0.92f)
+                                .scaleY(0.92f)
+                                .setDuration(80)
+                                .withEndAction {
+                                    touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()
+                                }
+                                .start()
+                        }
                     }
                     true
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
+                    lastTapTime = 0L
                     mainHandler.removeCallbacks(longPressRunnable)
                     touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(120).start()
                     isDragging = false
@@ -647,6 +670,11 @@ class RewriteAccessibilityService : AccessibilityService() {
             return true
         }
 
+        // Focusable or focused view in hybrid apps (Rapido / Flutter / React Native)
+        if (node.isFocusable && (node.isFocused || !node.text.isNullOrEmpty())) {
+            return true
+        }
+
         return false
     }
 
@@ -913,69 +941,118 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     /**
      * Injects replacement text into the target node.
-     * Strategy:
-     * 1. Primary: ACTION_SET_TEXT (works in native views: WhatsApp, Telegram, Gemini, Claude).
-     * 2. Fallback: Clipboard + ACTION_SET_SELECTION + ACTION_PASTE (for React Native / ChatGPT / Compose).
-     * 3. Safety Net: Text copied to clipboard with friendly prompt if all injection actions fail.
+     * Hardened multi-stage pipeline:
+     * 1. Immediate clipboard priming with rewritten text.
+     * 2. Comprehensive candidate collection (target, parent, siblings, children).
+     * 3. ACTION_SET_TEXT across candidate nodes.
+     * 4. Safe-range selection (0..minOf(length, 4000)) + ACTION_PASTE.
+     * 5. Click + ACTION_PASTE for hybrid frameworks (Flutter, Rapido, React Native).
+     * 6. Safety Net: User-friendly clipboard prompt.
      */
     private fun injectText(targetNode: AccessibilityNodeInfo, newText: String) {
         Log.d(TAG, "Attempting text injection into node: class=${targetNode.className}")
 
-        // 1. Primary Method: ACTION_SET_TEXT
-        val arguments = Bundle().apply {
+        // 1. Immediately prime system clipboard so user has it ready regardless of injection outcome
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Keyflow Rewrite", newText)
+            clipboard.setPrimaryClip(clip)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy to clipboard", e)
+        }
+
+        // 2. Gather candidate injection nodes (targetNode, parent, children, siblings)
+        val candidateNodes = mutableListOf<AccessibilityNodeInfo>()
+        candidateNodes.add(targetNode)
+
+        targetNode.parent?.let { parent ->
+            candidateNodes.add(parent)
+            for (i in 0 until parent.childCount) {
+                parent.getChild(i)?.let { sibling ->
+                    if (sibling != targetNode && !candidateNodes.contains(sibling)) {
+                        candidateNodes.add(sibling)
+                    }
+                }
+            }
+        }
+
+        fun collectSubtree(n: AccessibilityNodeInfo, depth: Int = 0) {
+            if (depth > 4) return
+            for (i in 0 until n.childCount) {
+                n.getChild(i)?.let { child ->
+                    if (!candidateNodes.contains(child)) {
+                        candidateNodes.add(child)
+                    }
+                    collectSubtree(child, depth + 1)
+                }
+            }
+        }
+        collectSubtree(targetNode)
+
+        // 3. Primary Method: ACTION_SET_TEXT across candidate nodes
+        val setTextArgs = Bundle().apply {
             putCharSequence(
                 AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
                 newText
             )
         }
 
-        val setTextSuccess = targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-        if (setTextSuccess) {
-            Log.d(TAG, "Successfully injected text via ACTION_SET_TEXT")
+        for (node in candidateNodes) {
+            if (node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }) {
+                if (node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)) {
+                    Log.d(TAG, "Successfully injected text via ACTION_SET_TEXT on ${node.className}")
+                    return
+                }
+            }
+        }
+
+        // Try direct ACTION_SET_TEXT on targetNode even if not advertised in actionList
+        if (targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)) {
+            Log.d(TAG, "Successfully injected text via direct ACTION_SET_TEXT on targetNode")
             return
         }
 
-        Log.w(TAG, "ACTION_SET_TEXT returned false, applying Clipboard + PASTE fallback for React Native/ChatGPT")
+        Log.w(TAG, "ACTION_SET_TEXT returned false, applying selection + ACTION_PASTE for Flutter/React Native/Custom chats")
 
-        // 2. Fallback Method: Clipboard + PASTE
-        try {
-            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("Keyflow Rewrite", newText)
-            clipboard.setPrimaryClip(clip)
+        // 4. Fallback Method: Focus + Selection + ACTION_PASTE
+        for (node in candidateNodes) {
+            try {
+                node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                node.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
 
-            // Ensure the node is focused
-            targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-
-            // Select all existing text if supported
-            val selectAllArgs = Bundle().apply {
-                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
-                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, targetNode.text?.length ?: 100000)
-            }
-            targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAllArgs)
-
-            // Perform PASTE on the target node
-            val pasteSuccess = targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-            if (pasteSuccess) {
-                Log.d(TAG, "Successfully injected text via ACTION_PASTE")
-                return
-            }
-
-            // Check if any child of targetNode accepts ACTION_PASTE
-            for (i in 0 until targetNode.childCount) {
-                val child = targetNode.getChild(i) ?: continue
-                if (child.actionList.any { it.id == AccessibilityNodeInfo.ACTION_PASTE }) {
-                    if (child.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
-                        Log.d(TAG, "Successfully injected text via child ACTION_PASTE")
-                        return
+                val textLen = node.text?.length ?: 0
+                if (textLen > 0) {
+                    val selArgs = Bundle().apply {
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+                        putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, minOf(textLen, 4000))
                     }
+                    node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selArgs)
                 }
+
+                if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
+                    Log.d(TAG, "Successfully injected text via ACTION_PASTE on ${node.className}")
+                    return
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during node paste attempt", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error during paste fallback", e)
         }
 
-        // 3. Safety Net: Text copied to clipboard
-        Toast.makeText(this, "Copied to clipboard! Long-press to paste.", Toast.LENGTH_LONG).show()
+        // 5. Click + Paste fallback for hybrid frameworks (Flutter / Rapido chat)
+        for (node in candidateNodes) {
+            try {
+                node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
+                    Log.d(TAG, "Successfully injected text via CLICK + ACTION_PASTE on ${node.className}")
+                    return
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during click+paste attempt", e)
+            }
+        }
+
+        // 6. Safety Net: Text copied to clipboard
+        Toast.makeText(this, "Copied to clipboard! Tap & paste.", Toast.LENGTH_SHORT).show()
     }
 
     private fun setLoading(isLoading: Boolean) {
@@ -986,7 +1063,8 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Displays the minimal ChatGPT-inspired vertical tone selector menu adjacent to the circular pill.
+     * Displays the minimal ChatGPT-inspired vertical tone selector menu anchored directly above
+     * the floating circular pill with matching edge padding (6dp margin) so it never moves off-screen.
      */
     private fun showToneMenu() {
         if (!isOverlayAttached || overlayView == null) return
@@ -1011,39 +1089,36 @@ class RewriteAccessibilityService : AccessibilityService() {
         chipPro?.setOnClickListener { onToneSelected("professional") }
         chipEmail?.setOnClickListener { onToneSelected("email") }
 
-        // Measure menu bounds to place it precisely adjacent to the circular pill
+        // Measure menu bounds
         val unspecifiedSpec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
         menuView.measure(unspecifiedSpec, unspecifiedSpec)
         val menuWidth = menuView.measuredWidth
         val menuHeight = menuView.measuredHeight
 
         val screenWidth = resources.displayMetrics.widthPixels
-        val screenHeight = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
-        val edgeMargin = (8 * density).toInt()
 
+        // Pill screen positions
         val pillScreenLeft = overlayLayoutParams.x + rootPaddingPx
-        val pillScreenRight = pillScreenLeft + badgeSizePx
-        val pillCenterY = overlayLayoutParams.y + rootPaddingPx + (badgeSizePx / 2)
+        val pillVisibleTop = overlayLayoutParams.y + rootPaddingPx
         val isPillOnLeft = (pillScreenLeft + (badgeSizePx / 2)) < screenWidth / 2
 
+        // Keep edge margin identical to the floating pill: 6dp (badgeMarginEdgePx)
         val targetX: Int = if (isPillOnLeft) {
-            val candidateX = pillScreenRight + (6 * density).toInt()
-            val maxX = screenWidth - menuWidth - edgeMargin
-            candidateX.coerceAtMost(maxX)
+            badgeMarginEdgePx
         } else {
-            val candidateX = pillScreenLeft - menuWidth - (6 * density).toInt()
-            candidateX.coerceAtLeast(edgeMargin)
+            screenWidth - menuWidth - badgeMarginEdgePx
         }
 
-        // Clamp vertically so the menu stays completely above the keyboard without dipping below
-        val maxAllowedBottom = if (activeDockedKeyboardTop > 0) activeDockedKeyboardTop - (6 * density).toInt() else screenHeight - (6 * density).toInt()
-        var targetY = pillCenterY - (menuHeight / 2)
-        if (targetY + menuHeight > maxAllowedBottom) {
-            targetY = maxAllowedBottom - menuHeight
-        }
-        if (targetY < (24 * density).toInt()) {
-            targetY = (24 * density).toInt()
+        // Anchor vertically directly ABOVE the floating pill with clean 8dp separation
+        val gapAbovePill = (8 * density).toInt()
+        val minTopY = (28 * density).toInt()
+        var targetY = pillVisibleTop - menuHeight - gapAbovePill
+
+        // If pill is near the very top of screen, display menu below the pill
+        if (targetY < minTopY) {
+            val pillVisibleBottom = pillVisibleTop + badgeSizePx
+            targetY = pillVisibleBottom + gapAbovePill
         }
 
         val lp = WindowManager.LayoutParams().apply {
@@ -1071,17 +1146,12 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Apple liquid glass bloom physics
+        // Apple liquid glass bloom physics expanding fluidly from the pill
         menuView.alpha = 0f
-        menuView.scaleX = 0.70f
-        menuView.scaleY = 0.70f
-        if (isPillOnLeft) {
-            menuView.pivotX = 0f
-            menuView.pivotY = (menuHeight / 2f).coerceIn(0f, menuHeight.toFloat())
-        } else {
-            menuView.pivotX = menuWidth.toFloat()
-            menuView.pivotY = (menuHeight / 2f).coerceIn(0f, menuHeight.toFloat())
-        }
+        menuView.scaleX = 0.72f
+        menuView.scaleY = 0.72f
+        menuView.pivotX = if (isPillOnLeft) 0f else menuWidth.toFloat()
+        menuView.pivotY = if (targetY < pillVisibleTop) menuHeight.toFloat() else 0f
 
         try {
             windowManager.addView(menuView, lp)
@@ -1091,9 +1161,9 @@ class RewriteAccessibilityService : AccessibilityService() {
                 .scaleX(1f)
                 .scaleY(1f)
                 .setDuration(190)
-                .setInterpolator(OvershootInterpolator(1.3f))
+                .setInterpolator(OvershootInterpolator(1.2f))
                 .start()
-            Log.d(TAG, "Vertical liquid-glass tone menu attached at X=$targetX, Y=$targetY")
+            Log.d(TAG, "Vertical liquid-glass tone menu anchored at X=$targetX, Y=$targetY (above pill)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach tone menu to WindowManager", e)
             toneMenuView = null
