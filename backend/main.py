@@ -9,8 +9,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import httpx
 
-# Optional master default Groq key read from environment
-GROQ_DEFAULT_KEY = os.environ.get("GROQ_DEFAULT_KEY", "")
+# Master default Groq key loaded from environment variables (.env / .env.voice / Vercel)
+GROQ_DEFAULT_KEY = os.environ.get("GROQ_DEFAULT_KEY") or os.environ.get("GROQ_AUDIO_API_KEY") or os.environ.get("GROQ_API_KEY", "")
 
 # Configure logging
 logging.basicConfig(
@@ -72,7 +72,7 @@ load_env_file()
 app = FastAPI(
     title="Keyflow Rewrite API",
     description="Multi-model AI backend supporting Groq & Gemini with 4 rewrite tones",
-    version="2.1.0"
+    version="2.3.0"
 )
 
 # Enable CORS for all origins
@@ -116,45 +116,51 @@ class TranscribeResponse(BaseModel):
     transcribed_text: str
     rewritten_text: str
     tone: Optional[str] = "simple"
-    provider: Optional[str] = "whisper-large-v3-turbo"
+    provider: Optional[str] = "whisper-large-v3"
     rewrite_provider: Optional[str] = "groq"
 
-# Ultra-compact, token-optimized system prompts with strict factual & Hinglish fidelity
-# Preserves 100% of facts, times, numbers, locations, and user intent without hallucinations or AI em-dashes (—)
+# Wispr Flow-inspired high-fidelity multilingual translation & tone polish prompts
+# Seamlessly converts Hindi (Devanagari/Hinglish) and English speech into fluent, natural English
 SYSTEM_PROMPTS = {
     "simple": (
-        "You are Keyflow. Rewrite rough text, typos, or Indian languages (Hindi, Hinglish, etc.) "
-        "into clean, natural conversational English texting style.\n"
+        "You are Keyflow, an elite communication assistant. The user input was spoken or typed in English, Hindi, or Hinglish.\n"
+        "Your task: Cleanly convert and translate it into natural, fluent conversational English texting style.\n"
         "Strict rules:\n"
-        "1. Preserve 100% of original facts, numbers, times, locations, and meaning. Never invent or omit details.\n"
-        "2. Accurately translate colloquial Hinglish (e.g. 'bhai rapido me hu 10 min me aa raha hu' -> 'Hey, I\\'m on a Rapido and will reach in 10 mins'). Maintain the exact same speaker perspective.\n"
-        "3. Keep output concise: match input length (1-2 lines for quick chats). Do NOT use em-dashes (—).\n"
-        "Output ONLY the final rewritten text."
+        "1. If spoken or written in Hindi or Hinglish (e.g. 'bhai rapido me hu 10 min me aa raha hu wait karna', 'kal meeting kitne baje hai'), accurately translate it into clear conversational English (e.g. 'Hey, I\\'m on a Rapido and will arrive in 10 minutes. Please wait.'). Maintain the exact same speaker perspective.\n"
+        "2. Preserve 100% of original facts, numbers, times, locations, and user intent. Never invent details.\n"
+        "3. Remove speech disfluencies (um, uh, false starts, repetitions).\n"
+        "4. Keep output concise matching casual chats. Do NOT use em-dashes (—).\n"
+        "5. Output ONLY the final polished English text. Never output meta-commentary or apologies."
     ),
     "formal": (
-        "You are Keyflow. Rewrite rough text or Indian languages (Hindi, Hinglish, etc.) into polite, respectful formal English.\n"
+        "You are Keyflow. The user input was spoken or typed in English, Hindi, or Hinglish.\n"
+        "Your task: Translate and polish it into polite, articulate, and respectful formal English.\n"
         "Strict rules:\n"
-        "1. Preserve 100% of original facts, numbers, times, locations, and meaning.\n"
-        "2. Write with articulate, dignified courtesy without robotic jargon.\n"
-        "3. Do NOT use em-dashes (—). Output ONLY the rewritten text."
+        "1. Accurately translate any Hindi/Hinglish phrasing into dignified formal English.\n"
+        "2. Preserve 100% of facts, dates, times, numbers, and requests precisely.\n"
+        "3. Remove speech disfluencies. Do NOT use em-dashes (—).\n"
+        "4. Output ONLY the final polished English text. Never output apologies or meta-commentary."
     ),
     "professional": (
-        "You are Keyflow. Rewrite rough text or Indian languages (Hindi, Hinglish, etc.) into crisp, confident workplace English.\n"
+        "You are Keyflow. The user input was spoken or typed in English, Hindi, or Hinglish.\n"
+        "Your task: Translate and polish it into crisp, confident workplace English suitable for Slack, Teams, or colleagues.\n"
         "Strict rules:\n"
-        "1. Preserve 100% of original facts, numbers, times, and meaning with precision.\n"
-        "2. Sound like an authentic business communicator: direct, polished, action-oriented.\n"
-        "3. Do NOT use em-dashes (—). Output ONLY the rewritten text."
+        "1. Accurately translate any Hindi/Hinglish phrasing into direct, actionable business English.\n"
+        "2. Preserve 100% of facts, dates, times, numbers, and context precisely.\n"
+        "3. Remove speech disfluencies. Do NOT use em-dashes (—).\n"
+        "4. Output ONLY the final polished English text. Never output apologies or meta-commentary."
     ),
     "email": (
-        "You are Keyflow. Convert rough text or Indian languages (Hindi, Hinglish, etc.) into a clean, complete professional email without em-dashes (—).\n"
-        "Preserve all facts, dates, times, and requests accurately.\n"
+        "You are Keyflow. The user input was spoken or typed in English, Hindi, or Hinglish.\n"
+        "Your task: Convert and translate it into a clean, complete professional email without em-dashes (—).\n"
+        "Preserve all facts, dates, times, requests, and context accurately.\n"
         "Format strictly as:\n"
         "Subject: <Subject>\n\n"
         "Dear <Name>,\n\n"
         "<Body>\n\n"
         "Best regards,\n"
         "[Your Name]\n"
-        "Output ONLY the email text."
+        "Output ONLY the email text. Never output apologies or meta-commentary."
     )
 }
 
@@ -203,17 +209,22 @@ def clean_output(raw_text: str, is_email: bool = False) -> str:
 
 async def rewrite_with_groq(text: str, tone: str, api_key: str) -> Optional[str]:
     """Calls Groq API with ultra-fast LPU inference (qwen/qwen3.8-27b). Token-optimized."""
+    clean_key = (api_key or "").strip()
+    if not clean_key:
+        return None
+
     is_email = (tone or "").lower().strip() == "email"
     sys_prompt = get_system_prompt(tone)
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
+        "Authorization": f"Bearer {clean_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "Keyflow/1.0"
     }
 
-    models_to_try = ["qwen/qwen3.8-27b", "groq/compound-mini"]
+    models_to_try = ["qwen/qwen3.8-27b", "qwen/qwen3.6-27b", "groq/compound-mini"]
 
-    async with httpx.AsyncClient(timeout=4.0) as client:
+    async with httpx.AsyncClient(timeout=6.0) as client:
         for model in models_to_try:
             payload = {
                 "model": model,
@@ -221,7 +232,7 @@ async def rewrite_with_groq(text: str, tone: str, api_key: str) -> Optional[str]
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": text}
                 ],
-                "temperature": 0.25,
+                "temperature": 0.2,
                 "max_tokens": 350 if is_email else 180
             }
             try:
@@ -355,10 +366,15 @@ def mock_local_rewrite(text: str, tone: str) -> str:
     return cleaned
 
 async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str) -> Optional[str]:
-    """Transcribes audio using Groq's whisper-large-v3-turbo with fallback to whisper-large-v3."""
+    """Transcribes audio using Groq's whisper-large-v3 with fallback to whisper-large-v3-turbo."""
+    clean_key = (api_key or "").strip()
+    if not clean_key:
+        return None
+
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {
-        "Authorization": f"Bearer {api_key}"
+        "Authorization": f"Bearer {clean_key}",
+        "User-Agent": "Keyflow/1.0"
     }
     
     # Determine MIME type based on extension
@@ -375,13 +391,11 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str)
     mime = mime_map.get(ext, "audio/m4a")
     safe_name = filename if filename else "recording.m4a"
 
-    # Multi-model Whisper cascade: Turbo first for speed, standard v3 as fallback
-    whisper_models = ["whisper-large-v3-turbo", "whisper-large-v3"]
+    # Prioritize whisper-large-v3 for unmatched Hinglish/Hindi mixed language fidelity
+    whisper_models = ["whisper-large-v3", "whisper-large-v3-turbo"]
     prompt = (
-        "Keyflow transcription: casual conversational spoken English, Hindi, and Hinglish. "
-        "Transcribe spoken Hindi words phonetically in Roman script (Hinglish) such as: "
-        "'bhai rapido me hu', '10 min me aa raha hu', 'theek hai', 'kya scene hai', 'kahan ho', "
-        "numbers, times, and locations."
+        "Keyflow dictation: Rapido, WhatsApp, invoice, meeting, presentation, check, "
+        "bhai, yaar, theek hai, kal, aaj, payment, cab, location, numbers, times, 10 min, please."
     )
 
     async with httpx.AsyncClient(timeout=15.0) as client:

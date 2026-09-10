@@ -38,6 +38,68 @@
             android:contentDescription="@string/app_name"
             android:visibility="visible" />
 
+        <!-- Voice Recording Visualizer Container -->
+        <FrameLayout
+            android:id="@+id/layoutVoiceVisualizer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:visibility="gone">
+
+            <!-- Red Silence Indicator Dot (breathing live icon when silent) -->
+            <View
+                android:id="@+id/viewRedSilenceIndicator"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_silence_red_dot"
+                android:visibility="visible" />
+
+            <!-- Frequency / Amplitude Waveform Bars (shown when voice detected) -->
+            <LinearLayout
+                android:id="@+id/layoutWaveBars"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:visibility="gone">
+
+                <!-- Bar 1 -->
+                <View
+                    android:id="@+id/waveBar1"
+                    android:layout_width="3dp"
+                    android:layout_height="7dp"
+                    android:layout_marginHorizontal="1.5dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <!-- Bar 2 (Core left peak) -->
+                <View
+                    android:id="@+id/waveBar2"
+                    android:layout_width="3dp"
+                    android:layout_height="14dp"
+                    android:layout_marginHorizontal="1.5dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <!-- Bar 3 (Core right peak) -->
+                <View
+                    android:id="@+id/waveBar3"
+                    android:layout_width="3dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.5dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <!-- Bar 4 -->
+                <View
+                    android:id="@+id/waveBar4"
+                    android:layout_width="3dp"
+                    android:layout_height="6dp"
+                    android:layout_marginHorizontal="1.5dp"
+                    android:background="@drawable/bg_wave_bar" />
+            </LinearLayout>
+
+        </FrameLayout>
+
     </FrameLayout>
 
 </FrameLayout>

@@ -100,11 +100,24 @@ class RewriteAccessibilityService : AccessibilityService() {
     // Mode State (Voice-to-Text is default)
     private var activeMode = MODE_VOICE
 
-    // Voice Recording State
+    // Voice Recording & Visualizer State
     private var isRecording = false
     private var mediaRecorder: MediaRecorder? = null
     private var currentAudioFile: File? = null
-    private var recordingPulseAnimator: ValueAnimator? = null
+    private var layoutVoiceVisualizer: View? = null
+    private var viewRedSilenceIndicator: View? = null
+    private var layoutWaveBars: View? = null
+    private var waveBar1: View? = null
+    private var waveBar2: View? = null
+    private var waveBar3: View? = null
+    private var waveBar4: View? = null
+    private var silenceDotBreathingAnimator: ValueAnimator? = null
+    private var smoothedAmplitude = 0f
+    private val AMPLITUDE_THRESHOLD = 3200
+
+    // Text Selection Tracking (preserves selection when overlay is tapped)
+    private var lastSelectionStart = -1
+    private var lastSelectionEnd = -1
 
     // Vertical Tone Menu State
     private var toneMenuView: View? = null
@@ -199,6 +212,13 @@ class RewriteAccessibilityService : AccessibilityService() {
             btnRewrite = findViewById(R.id.btnRewrite)
             ivIcon = findViewById(R.id.ivIcon)
             progressBar = findViewById(R.id.progressBar)
+            layoutVoiceVisualizer = findViewById(R.id.layoutVoiceVisualizer)
+            viewRedSilenceIndicator = findViewById(R.id.viewRedSilenceIndicator)
+            layoutWaveBars = findViewById(R.id.layoutWaveBars)
+            waveBar1 = findViewById(R.id.waveBar1)
+            waveBar2 = findViewById(R.id.waveBar2)
+            waveBar3 = findViewById(R.id.waveBar3)
+            waveBar4 = findViewById(R.id.waveBar4)
 
             btnRewrite?.outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) {
@@ -565,13 +585,27 @@ class RewriteAccessibilityService : AccessibilityService() {
                 }
             }
 
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED,
-            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
-                // User is actively typing or selecting text inside the input field.
-                // Do NOT schedule keyboard check on keystrokes to prevent any overlay jumps.
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
                 val source = event.source
                 if (source != null && isCandidateInputNode(source)) {
                     updateLastInteractedNode(source)
+                }
+            }
+
+            AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
+                val source = event.source
+                if (source != null && isCandidateInputNode(source)) {
+                    updateLastInteractedNode(source)
+                    val from = event.fromIndex
+                    val to = event.toIndex
+                    if (from >= 0 && to >= 0 && from != to) {
+                        lastSelectionStart = minOf(from, to)
+                        lastSelectionEnd = maxOf(from, to)
+                        Log.d(TAG, "Captured text selection: [$lastSelectionStart, $lastSelectionEnd]")
+                    } else {
+                        lastSelectionStart = -1
+                        lastSelectionEnd = -1
+                    }
                 }
             }
         }
@@ -965,7 +999,84 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Starts voice capture with MediaRecorder in MPEG_4 / AAC at 16kHz.
+     * Visualizer polling runnable: polls mediaRecorder maxAmplitude every 40ms,
+     * toggling between the breathing red silence dot and dynamic dancing wave bars with cyan glow.
+     */
+    private val visualizerRunnable = object : Runnable {
+        override fun run() {
+            if (!isRecording) return
+
+            val rawAmp = try {
+                mediaRecorder?.maxAmplitude ?: 0
+            } catch (e: Exception) {
+                0
+            }
+
+            // Exponential Moving Average filter
+            smoothedAmplitude = smoothedAmplitude * 0.45f + rawAmp * 0.55f
+            val normalized = ((smoothedAmplitude - 1200f) / 18000f).coerceIn(0f, 1f)
+
+            if (smoothedAmplitude < AMPLITUDE_THRESHOLD) {
+                // Silence state: red dot visible & breathing, wave bars hidden, red pill outline
+                if (layoutWaveBars?.visibility == View.VISIBLE || viewRedSilenceIndicator?.visibility != View.VISIBLE) {
+                    layoutWaveBars?.visibility = View.GONE
+                    viewRedSilenceIndicator?.visibility = View.VISIBLE
+                    btnRewrite?.setBackgroundResource(R.drawable.bg_pill_recording)
+                    startSilenceBreathingAnimation()
+                }
+            } else {
+                // Voice active state: wave bars visible, red dot hidden, cyan glow pill outline
+                if (viewRedSilenceIndicator?.visibility == View.VISIBLE || layoutWaveBars?.visibility != View.VISIBLE) {
+                    stopSilenceBreathingAnimation()
+                    viewRedSilenceIndicator?.visibility = View.GONE
+                    layoutWaveBars?.visibility = View.VISIBLE
+                    btnRewrite?.setBackgroundResource(R.drawable.bg_pill_voice_active)
+                }
+                updateWaveBars(normalized)
+            }
+
+            mainHandler.postDelayed(this, 40L)
+        }
+    }
+
+    private fun startSilenceBreathingAnimation() {
+        if (silenceDotBreathingAnimator?.isRunning == true) return
+        silenceDotBreathingAnimator?.cancel()
+        silenceDotBreathingAnimator = ValueAnimator.ofFloat(0.85f, 1.25f).apply {
+            duration = 550L
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val s = anim.animatedValue as Float
+                viewRedSilenceIndicator?.scaleX = s
+                viewRedSilenceIndicator?.scaleY = s
+            }
+            start()
+        }
+    }
+
+    private fun stopSilenceBreathingAnimation() {
+        silenceDotBreathingAnimator?.cancel()
+        viewRedSilenceIndicator?.scaleX = 1f
+        viewRedSilenceIndicator?.scaleY = 1f
+    }
+
+    private fun updateWaveBars(normalized: Float) {
+        val b1 = 0.4f + normalized * 1.6f
+        val b2 = (0.5f + normalized * 2.0f).coerceAtMost(2.6f)
+        val b3 = (0.5f + normalized * 1.8f).coerceAtMost(2.3f)
+        val b4 = 0.35f + normalized * 1.5f
+
+        waveBar1?.scaleY = b1
+        waveBar2?.scaleY = b2
+        waveBar3?.scaleY = b3
+        waveBar4?.scaleY = b4
+    }
+
+    /**
+     * Starts voice capture with MediaRecorder in MPEG_4 / AAC at 16kHz Mono 64kbps,
+     * utilizing VOICE_RECOGNITION DSP and activating the live amplitude visualizer.
      */
     private fun startVoiceRecording() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -992,36 +1103,50 @@ class RewriteAccessibilityService : AccessibilityService() {
                 MediaRecorder()
             }
 
-            recorder.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioSamplingRate(16000)
-                setAudioEncodingBitRate(32000)
-                setOutputFile(audioFile.absolutePath)
-                prepare()
-                start()
+            try {
+                recorder.apply {
+                    setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setAudioChannels(1)
+                    setAudioSamplingRate(16000)
+                    setAudioEncodingBitRate(64000)
+                    setOutputFile(audioFile.absolutePath)
+                    prepare()
+                    start()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "VOICE_RECOGNITION failed, falling back to MIC source", e)
+                recorder.reset()
+                recorder.apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setAudioChannels(1)
+                    setAudioSamplingRate(16000)
+                    setAudioEncodingBitRate(64000)
+                    setOutputFile(audioFile.absolutePath)
+                    prepare()
+                    start()
+                }
             }
             mediaRecorder = recorder
             isRecording = true
+            smoothedAmplitude = 0f
 
             btnRewrite?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             btnRewrite?.setBackgroundResource(R.drawable.bg_pill_recording)
 
-            // Start glowing pulse
-            recordingPulseAnimator?.cancel()
-            recordingPulseAnimator = ValueAnimator.ofFloat(1.0f, 1.15f).apply {
-                duration = 550L
-                repeatMode = ValueAnimator.REVERSE
-                repeatCount = ValueAnimator.INFINITE
-                interpolator = DecelerateInterpolator()
-                addUpdateListener { anim ->
-                    val v = anim.animatedValue as Float
-                    btnRewrite?.scaleX = v
-                    btnRewrite?.scaleY = v
-                }
-                start()
-            }
+            // Activate visualizer: hide logo emblem, show visualizer container with breathing red dot
+            ivIcon?.visibility = View.GONE
+            layoutVoiceVisualizer?.visibility = View.VISIBLE
+            viewRedSilenceIndicator?.visibility = View.VISIBLE
+            layoutWaveBars?.visibility = View.GONE
+            startSilenceBreathingAnimation()
+
+            // Start live amplitude waveform polling
+            mainHandler.removeCallbacks(visualizerRunnable)
+            mainHandler.post(visualizerRunnable)
 
             Toast.makeText(this, "Listening...", Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Started voice recording to ${audioFile.absolutePath}")
@@ -1034,13 +1159,20 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Stops voice recording and sends the audio file to Groq Whisper V3 Turbo for transcription + rewriting.
+     * Stops voice recording and sends the audio file to Groq Whisper V3 for transcription + rewriting.
      */
     private fun stopVoiceRecording(discard: Boolean = false) {
         if (!isRecording && mediaRecorder == null) return
 
         isRecording = false
-        recordingPulseAnimator?.cancel()
+        mainHandler.removeCallbacks(visualizerRunnable)
+        stopSilenceBreathingAnimation()
+
+        // Reset visualizer views and restore emblem icon & default pill background
+        layoutVoiceVisualizer?.visibility = View.GONE
+        viewRedSilenceIndicator?.visibility = View.GONE
+        layoutWaveBars?.visibility = View.GONE
+        ivIcon?.visibility = View.VISIBLE
         btnRewrite?.scaleX = 1.0f
         btnRewrite?.scaleY = 1.0f
         btnRewrite?.setBackgroundResource(R.drawable.bg_floating_ai_pill)
@@ -1074,13 +1206,25 @@ class RewriteAccessibilityService : AccessibilityService() {
                     val inputNode = findActiveInputNode()
                     if (inputNode != null) {
                         val fullText = extractTextFromNode(inputNode)
-                        val selStart = inputNode.textSelectionStart
-                        val selEnd = inputNode.textSelectionEnd
-                        val hasSelection = selStart in 0 until selEnd && selEnd <= fullText.length
+                        val nodeSelStart = inputNode.textSelectionStart
+                        val nodeSelEnd = inputNode.textSelectionEnd
+                        val (selStart, selEnd, hasSelection) = when {
+                            nodeSelStart in 0..fullText.length && nodeSelEnd in 0..fullText.length && nodeSelStart != nodeSelEnd -> {
+                                val s = minOf(nodeSelStart, nodeSelEnd)
+                                val e = maxOf(nodeSelStart, nodeSelEnd)
+                                Triple(s, e, true)
+                            }
+                            lastSelectionStart in 0..fullText.length && lastSelectionEnd in 0..fullText.length && lastSelectionStart < lastSelectionEnd -> {
+                                Triple(lastSelectionStart, lastSelectionEnd, true)
+                            }
+                            else -> Triple(0, 0, false)
+                        }
 
                         if (hasSelection) {
                             val newFull = fullText.substring(0, selStart) + finalText + fullText.substring(selEnd)
                             injectText(inputNode, newFull, newCursorPos = selStart + finalText.length)
+                            lastSelectionStart = -1
+                            lastSelectionEnd = -1
                         } else if (fullText.isNotEmpty()) {
                             val separator = if (fullText.endsWith(" ") || fullText.endsWith("\n")) "" else " "
                             val newFull = fullText + separator + finalText
@@ -1109,6 +1253,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     /**
      * Handles single-tap in Text Mode: selection-aware rewrite of full text or highlighted snippet.
+     * When text or a line is selected, only that selection is rewritten and injected.
      */
     private fun handleTextRewriteClicked() {
         val inputNode = findActiveInputNode()
@@ -1125,10 +1270,20 @@ class RewriteAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Selection-Aware: Check if user has selected a specific segment
-        val selStart = inputNode.textSelectionStart
-        val selEnd = inputNode.textSelectionEnd
-        val hasSelection = selStart in 0 until selEnd && selEnd <= fullText.length
+        // Selection-Aware: Check both accessibility node selection and cached selection
+        val nodeSelStart = inputNode.textSelectionStart
+        val nodeSelEnd = inputNode.textSelectionEnd
+        val (selStart, selEnd, hasSelection) = when {
+            nodeSelStart in 0..fullText.length && nodeSelEnd in 0..fullText.length && nodeSelStart != nodeSelEnd -> {
+                val s = minOf(nodeSelStart, nodeSelEnd)
+                val e = maxOf(nodeSelStart, nodeSelEnd)
+                Triple(s, e, true)
+            }
+            lastSelectionStart in 0..fullText.length && lastSelectionEnd in 0..fullText.length && lastSelectionStart < lastSelectionEnd -> {
+                Triple(lastSelectionStart, lastSelectionEnd, true)
+            }
+            else -> Triple(0, fullText.length, false)
+        }
 
         val textToRewrite = if (hasSelection) {
             fullText.substring(selStart, selEnd)
@@ -1136,7 +1291,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             fullText
         }
 
-        Log.d(TAG, "Starting text rewrite [selection=$hasSelection]: '$textToRewrite'")
+        Log.d(TAG, "Starting text rewrite [selection=$hasSelection ($selStart..$selEnd)]: '$textToRewrite'")
         setLoading(true)
 
         serviceScope.launch {
@@ -1145,9 +1300,11 @@ class RewriteAccessibilityService : AccessibilityService() {
                 if (!rewrittenText.isNullOrBlank()) {
                     val targetNode = if (inputNode.refresh()) inputNode else (findActiveInputNode() ?: inputNode)
                     if (hasSelection) {
-                        // Replace only the selected range
+                        // Replace strictly the selected range
                         val newFullText = fullText.substring(0, selStart) + rewrittenText + fullText.substring(selEnd)
                         injectText(targetNode, newFullText, newCursorPos = selStart + rewrittenText.length)
+                        lastSelectionStart = -1
+                        lastSelectionEnd = -1
                     } else {
                         injectText(targetNode, rewrittenText, newCursorPos = rewrittenText.length)
                     }
@@ -1387,7 +1544,15 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     private fun setLoading(isLoading: Boolean) {
         progressBar?.visibility = if (isLoading) View.VISIBLE else View.GONE
-        ivIcon?.visibility = if (isLoading) View.GONE else View.VISIBLE
+        if (isLoading) {
+            ivIcon?.visibility = View.GONE
+            layoutVoiceVisualizer?.visibility = View.GONE
+        } else {
+            if (!isRecording) {
+                ivIcon?.visibility = View.VISIBLE
+                layoutVoiceVisualizer?.visibility = View.GONE
+            }
+        }
         btnRewrite?.isEnabled = !isLoading
         btnRewrite?.alpha = if (isLoading) 0.6f else 1.0f
     }
