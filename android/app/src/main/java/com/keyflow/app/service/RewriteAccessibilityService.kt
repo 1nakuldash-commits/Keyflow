@@ -87,17 +87,44 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val DEFAULT_TONE = "simple"
 
         private const val BADGE_SIZE_DP = 44
+        private const val CAPSULE_EXPANDED_WIDTH_DP = 156
         private const val ROOT_PADDING_DP = 8
         private const val BADGE_MARGIN_EDGE_DP = 10 // Clean 10dp margin for both pill and popup menu
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 260L
-        private const val DOUBLE_TAP_THRESHOLD_MS = 260L
+        private const val DOUBLE_TAP_THRESHOLD_MS = 200L
         private const val MENU_WIDTH_DP = 132
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
 
         private const val RECORDING_CHANNEL_ID = "keyflow_voice_channel"
         private const val RECORDING_NOTIFICATION_ID = 1001
         private const val MIN_RECORDING_DURATION_MS = 650L
+
+        private val CHAT_PLACEHOLDERS = setOf(
+            "message",
+            "message...",
+            "type a message",
+            "type a message...",
+            "type message",
+            "type message...",
+            "write a message",
+            "write a message...",
+            "send a message",
+            "send a message...",
+            "send a chat",
+            "start a chat",
+            "say something",
+            "say something...",
+            "text message",
+            "search",
+            "search...",
+            "add a comment",
+            "add a comment...",
+            "reply",
+            "reply...",
+            "ask a question",
+            "ask a question..."
+        )
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -113,22 +140,21 @@ class RewriteAccessibilityService : AccessibilityService() {
     // Mode State (Voice-to-Text is default)
     private var activeMode = MODE_VOICE
 
-    // Voice Recording & Visualizer State
+    // Voice Recording & Whisper Flow Live Wave Capsule State
     private var isRecording = false
+    private var isCapsuleExpanded = false
     private var recordingStartTime = 0L
     private var audioFocusRequest: AudioFocusRequest? = null
     private var mediaRecorder: MediaRecorder? = null
     private var currentAudioFile: File? = null
     private var layoutVoiceVisualizer: View? = null
-    private var viewRedSilenceIndicator: View? = null
+    private var btnCancelVoice: View? = null
+    private var btnDoneVoice: View? = null
     private var layoutWaveBars: View? = null
-    private var waveBar1: View? = null
-    private var waveBar2: View? = null
-    private var waveBar3: View? = null
-    private var waveBar4: View? = null
-    private var silenceDotBreathingAnimator: ValueAnimator? = null
+    private val waveBars = arrayOfNulls<View>(11)
+    private var livingWavePhaseAnimator: ValueAnimator? = null
+    private var livingWavePhase = 0f
     private var smoothedAmplitude = 0f
-    private val AMPLITUDE_THRESHOLD = 3200
 
     private val maxRecordingTimeoutRunnable = Runnable {
         if (isRecording) {
@@ -182,11 +208,20 @@ class RewriteAccessibilityService : AccessibilityService() {
     private val badgeSizePx: Int
         get() = (BADGE_SIZE_DP * resources.displayMetrics.density).toInt()
 
+    private val capsuleExpandedWidthPx: Int
+        get() = (CAPSULE_EXPANDED_WIDTH_DP * resources.displayMetrics.density).toInt()
+
     private val rootPaddingPx: Int
         get() = (ROOT_PADDING_DP * resources.displayMetrics.density).toInt()
 
     private val badgeMarginEdgePx: Int
         get() = (BADGE_MARGIN_EDGE_DP * resources.displayMetrics.density).toInt()
+
+    private fun isPlaceholderText(text: String?): Boolean {
+        if (text.isNullOrBlank()) return true
+        val clean = text.trim().lowercase()
+        return CHAT_PLACEHOLDERS.contains(clean) || (clean.startsWith("message ") && clean.length <= 16)
+    }
 
     private val badgeGapAboveKeyboardPx: Int
         get() = (BADGE_GAP_ABOVE_KEYBOARD_DP * resources.displayMetrics.density).toInt()
@@ -251,16 +286,37 @@ class RewriteAccessibilityService : AccessibilityService() {
             ivIcon = findViewById(R.id.ivIcon)
             progressBar = findViewById(R.id.progressBar)
             layoutVoiceVisualizer = findViewById(R.id.layoutVoiceVisualizer)
-            viewRedSilenceIndicator = findViewById(R.id.viewRedSilenceIndicator)
+            btnCancelVoice = findViewById(R.id.btnCancelVoice)
+            btnDoneVoice = findViewById(R.id.btnDoneVoice)
             layoutWaveBars = findViewById(R.id.layoutWaveBars)
-            waveBar1 = findViewById(R.id.waveBar1)
-            waveBar2 = findViewById(R.id.waveBar2)
-            waveBar3 = findViewById(R.id.waveBar3)
-            waveBar4 = findViewById(R.id.waveBar4)
+
+            waveBars[0] = findViewById(R.id.waveBar1)
+            waveBars[1] = findViewById(R.id.waveBar2)
+            waveBars[2] = findViewById(R.id.waveBar3)
+            waveBars[3] = findViewById(R.id.waveBar4)
+            waveBars[4] = findViewById(R.id.waveBar5)
+            waveBars[5] = findViewById(R.id.waveBar6)
+            waveBars[6] = findViewById(R.id.waveBar7)
+            waveBars[7] = findViewById(R.id.waveBar8)
+            waveBars[8] = findViewById(R.id.waveBar9)
+            waveBars[9] = findViewById(R.id.waveBar10)
+            waveBars[10] = findViewById(R.id.waveBar11)
+
+            btnCancelVoice?.setOnClickListener {
+                if (isRecording) {
+                    stopVoiceRecording(discard = true)
+                }
+            }
+
+            btnDoneVoice?.setOnClickListener {
+                if (isRecording) {
+                    stopVoiceRecording(discard = false)
+                }
+            }
 
             btnRewrite?.outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) {
-                    outline.setOval(0, 0, view.width, view.height)
+                    outline.setRoundRect(0, 0, view.width, view.height, view.height / 2f)
                 }
             }
             btnRewrite?.clipToOutline = true
@@ -466,62 +522,34 @@ class RewriteAccessibilityService : AccessibilityService() {
                         mainHandler.removeCallbacks(singleTapRunnable)
                         isUserDragging = false
                     } else if (isRecording) {
-                        // User tapped while recording is active
-                        val elapsed = SystemClock.uptimeMillis() - recordingStartTime
+                        // User tapped the recording capsule body -> finish recording and transcribe!
                         lastTapTime = 0L
                         mainHandler.removeCallbacks(singleTapRunnable)
                         isUserDragging = false
-
-                        if (elapsed <= DOUBLE_TAP_THRESHOLD_MS) {
-                            // Tap arrived within double-tap window -> switch mode!
-                            stopVoiceRecording(discard = true)
-                            switchMode()
-                        } else if (elapsed < MIN_RECORDING_DURATION_MS) {
-                            // Micro-tap (< 650ms) -> discard without uploading silence
-                            stopVoiceRecording(discard = true)
-                            Toast.makeText(this@RewriteAccessibilityService, "Tap and speak a sentence", Toast.LENGTH_SHORT).show()
-                        } else {
-                            // Spoke and tapped to finish!
-                            stopVoiceRecording(discard = false)
-                        }
+                        stopVoiceRecording(discard = false)
                     } else {
                         isUserDragging = false
                         val now = SystemClock.uptimeMillis()
 
-                        if (activeMode == MODE_VOICE) {
-                            // Zero-latency instant start for Voice Mode
+                        if (now - lastTapTime <= DOUBLE_TAP_THRESHOLD_MS) {
+                            // Double-Tap detected! Instantly switch mode with 3D flip (ZERO recording started!)
+                            mainHandler.removeCallbacks(singleTapRunnable)
+                            lastTapTime = 0L
+                            switchMode()
+                        } else {
+                            // First tap: light tactile feedback & schedule single-tap action
                             lastTapTime = now
                             touchTarget.animate()
                                 .scaleX(0.92f)
                                 .scaleY(0.92f)
-                                .setDuration(80)
+                                .setDuration(70)
                                 .withEndAction {
-                                    touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()
+                                    touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(70).start()
                                 }
                                 .start()
-                            startVoiceRecording()
-                        } else {
-                            // Text Mode: standard double-tap detection
-                            if (now - lastTapTime <= DOUBLE_TAP_THRESHOLD_MS) {
-                                // Double-Tap detected! Switch Mode (Text -> Voice)
-                                mainHandler.removeCallbacks(singleTapRunnable)
-                                lastTapTime = 0L
-                                switchMode()
-                            } else {
-                                // First tap: Subtle micro-feedback & schedule single-tap action
-                                lastTapTime = now
-                                touchTarget.animate()
-                                    .scaleX(0.92f)
-                                    .scaleY(0.92f)
-                                    .setDuration(80)
-                                    .withEndAction {
-                                        touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(80).start()
-                                    }
-                                    .start()
 
-                                mainHandler.removeCallbacks(singleTapRunnable)
-                                mainHandler.postDelayed(singleTapRunnable, DOUBLE_TAP_THRESHOLD_MS)
-                            }
+                            mainHandler.removeCallbacks(singleTapRunnable)
+                            mainHandler.postDelayed(singleTapRunnable, DOUBLE_TAP_THRESHOLD_MS)
                         }
                     }
                     true
@@ -903,16 +931,24 @@ class RewriteAccessibilityService : AccessibilityService() {
     private fun extractTextFromNode(node: AccessibilityNodeInfo?): String {
         if (node == null) return ""
 
+        // In Android 8.0+ (API 26), AccessibilityNodeInfo explicitly flags hint/placeholder text
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && node.isShowingHintText) {
+            return ""
+        }
+
         val text = node.text?.toString()?.trim().orEmpty()
         val hint = node.hintText?.toString()?.trim().orEmpty()
 
-        // Filter out hint/placeholder (e.g. "Message ChatGPT")
-        if (text.isNotEmpty() && (hint.isEmpty() || text != hint)) {
+        // Filter out hint/placeholder (e.g. "Message", "Type a message", "Message ChatGPT")
+        if (text.isNotEmpty()) {
+            if (text.equals(hint, ignoreCase = true) || isPlaceholderText(text)) {
+                return ""
+            }
             return text
         }
 
         val contentDesc = node.contentDescription?.toString()?.trim().orEmpty()
-        if (contentDesc.isNotEmpty() && (hint.isEmpty() || contentDesc != hint)) {
+        if (contentDesc.isNotEmpty() && !contentDesc.equals(hint, ignoreCase = true) && !isPlaceholderText(contentDesc)) {
             return contentDesc
         }
 
@@ -920,7 +956,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val childText = extractTextFromNode(child)
-            if (childText.isNotEmpty()) {
+            if (childText.isNotEmpty() && !isPlaceholderText(childText)) {
                 return childText
             }
         }
@@ -937,6 +973,10 @@ class RewriteAccessibilityService : AccessibilityService() {
         // Tier 1: Check tracked input node from recent typing/clicking
         lastInteractedInputNode?.let { node ->
             if (node.refresh() && isCandidateInputNode(node)) {
+                if (node.isFocused) {
+                    Log.d(TAG, "Tier 1: Found active focused input node: ${node.className}")
+                    return node
+                }
                 val text = extractTextFromNode(node)
                 if (text.isNotEmpty()) {
                     Log.d(TAG, "Tier 1: Found active tracked input node with text: '$text'")
@@ -1067,7 +1107,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     /**
      * Visualizer polling runnable: polls mediaRecorder maxAmplitude every 40ms,
-     * toggling between the breathing red silence dot and dynamic dancing wave bars with cyan glow.
+     * driving the organic living wave bars inspired by Whisper Flow.
      */
     private val visualizerRunnable = object : Runnable {
         override fun run() {
@@ -1080,65 +1120,135 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
 
             // Exponential Moving Average filter
-            smoothedAmplitude = smoothedAmplitude * 0.45f + rawAmp * 0.55f
-            val normalized = ((smoothedAmplitude - 1200f) / 18000f).coerceIn(0f, 1f)
-
-            if (smoothedAmplitude < AMPLITUDE_THRESHOLD) {
-                // Silence state: red dot visible & breathing, wave bars hidden, red pill outline
-                if (layoutWaveBars?.visibility == View.VISIBLE || viewRedSilenceIndicator?.visibility != View.VISIBLE) {
-                    layoutWaveBars?.visibility = View.GONE
-                    viewRedSilenceIndicator?.visibility = View.VISIBLE
-                    btnRewrite?.setBackgroundResource(R.drawable.bg_pill_recording)
-                    startSilenceBreathingAnimation()
-                }
-            } else {
-                // Voice active state: wave bars visible, red dot hidden, cyan glow pill outline
-                if (viewRedSilenceIndicator?.visibility == View.VISIBLE || layoutWaveBars?.visibility != View.VISIBLE) {
-                    stopSilenceBreathingAnimation()
-                    viewRedSilenceIndicator?.visibility = View.GONE
-                    layoutWaveBars?.visibility = View.VISIBLE
-                    btnRewrite?.setBackgroundResource(R.drawable.bg_pill_voice_active)
-                }
-                updateWaveBars(normalized)
-            }
+            smoothedAmplitude = smoothedAmplitude * 0.40f + rawAmp * 0.60f
+            updateLivingWaveBars(livingWavePhase, smoothedAmplitude)
 
             mainHandler.postDelayed(this, 40L)
         }
     }
 
-    private fun startSilenceBreathingAnimation() {
-        if (silenceDotBreathingAnimator?.isRunning == true) return
-        silenceDotBreathingAnimator?.cancel()
-        silenceDotBreathingAnimator = ValueAnimator.ofFloat(0.85f, 1.25f).apply {
-            duration = 550L
-            repeatMode = ValueAnimator.REVERSE
+    private fun startLivingWaveAnimation() {
+        if (livingWavePhaseAnimator?.isRunning == true) return
+        livingWavePhaseAnimator?.cancel()
+        livingWavePhaseAnimator = ValueAnimator.ofFloat(0f, (2 * Math.PI).toFloat()).apply {
+            duration = 1300L
             repeatCount = ValueAnimator.INFINITE
-            interpolator = DecelerateInterpolator()
+            repeatMode = ValueAnimator.RESTART
+            interpolator = android.view.animation.LinearInterpolator()
             addUpdateListener { anim ->
-                val s = anim.animatedValue as Float
-                viewRedSilenceIndicator?.scaleX = s
-                viewRedSilenceIndicator?.scaleY = s
+                livingWavePhase = anim.animatedValue as Float
+                updateLivingWaveBars(livingWavePhase, smoothedAmplitude)
             }
             start()
         }
     }
 
-    private fun stopSilenceBreathingAnimation() {
-        silenceDotBreathingAnimator?.cancel()
-        viewRedSilenceIndicator?.scaleX = 1f
-        viewRedSilenceIndicator?.scaleY = 1f
+    private fun stopLivingWaveAnimation() {
+        livingWavePhaseAnimator?.cancel()
+        livingWavePhaseAnimator = null
+        for (bar in waveBars) {
+            bar?.scaleY = 0.4f
+        }
     }
 
-    private fun updateWaveBars(normalized: Float) {
-        val b1 = 0.4f + normalized * 1.6f
-        val b2 = (0.5f + normalized * 2.0f).coerceAtMost(2.6f)
-        val b3 = (0.5f + normalized * 1.8f).coerceAtMost(2.3f)
-        val b4 = 0.35f + normalized * 1.5f
+    private fun updateLivingWaveBars(phase: Float, amp: Float) {
+        val normalized = ((amp - 1000f) / 16000f).coerceIn(0f, 1f)
+        for (i in 0 until 11) {
+            val bar = waveBars[i] ?: continue
+            val centerDist = kotlin.math.abs(i - 5) / 5.5f
+            val bellWeight = (1.0f - centerDist).coerceIn(0.3f, 1.0f)
 
-        waveBar1?.scaleY = b1
-        waveBar2?.scaleY = b2
-        waveBar3?.scaleY = b3
-        waveBar4?.scaleY = b4
+            // Organic sine wave undulation (living wave object)
+            val ripple = kotlin.math.sin(phase + i * 0.55f).toFloat()
+            val restingScale = 0.40f + 0.25f * ripple * bellWeight
+
+            // Live mic amplitude boost
+            val voiceScale = normalized * (1.2f + 1.2f * bellWeight)
+
+            val totalScale = (restingScale + voiceScale).coerceIn(0.25f, 2.3f)
+            bar.scaleY = totalScale
+        }
+    }
+
+    private fun expandCapsuleForRecording() {
+        val btn = btnRewrite ?: return
+        if (isCapsuleExpanded) return
+        isCapsuleExpanded = true
+
+        val screenWidth = resources.displayMetrics.widthPixels
+        val targetWidth = capsuleExpandedWidthPx
+        val currentX = overlayLayoutParams.x
+
+        if (currentX + targetWidth > screenWidth - badgeMarginEdgePx) {
+            overlayLayoutParams.x = (screenWidth - targetWidth - badgeMarginEdgePx).coerceAtLeast(badgeMarginEdgePx)
+            if (isOverlayAttached && overlayView != null) {
+                try {
+                    windowManager.updateViewLayout(overlayView, overlayLayoutParams)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating expanded position", e)
+                }
+            }
+        }
+
+        btn.setBackgroundResource(R.drawable.bg_recording_capsule)
+        ivIcon?.visibility = View.GONE
+        layoutVoiceVisualizer?.visibility = View.VISIBLE
+        layoutWaveBars?.visibility = View.VISIBLE
+
+        val anim = ValueAnimator.ofInt(badgeSizePx, targetWidth).apply {
+            duration = 240L
+            interpolator = DecelerateInterpolator(1.8f)
+            addUpdateListener { va ->
+                val w = va.animatedValue as Int
+                val lp = btn.layoutParams
+                lp.width = w
+                btn.layoutParams = lp
+            }
+        }
+        anim.start()
+
+        startLivingWaveAnimation()
+    }
+
+    private fun collapseCapsule(onEnd: () -> Unit = {}) {
+        val btn = btnRewrite ?: return
+        if (!isCapsuleExpanded) {
+            onEnd()
+            return
+        }
+        isCapsuleExpanded = false
+        stopLivingWaveAnimation()
+
+        val currentWidth = btn.width.takeIf { it > 0 } ?: capsuleExpandedWidthPx
+        val anim = ValueAnimator.ofInt(currentWidth, badgeSizePx).apply {
+            duration = 200L
+            interpolator = DecelerateInterpolator(1.8f)
+            addUpdateListener { va ->
+                val w = va.animatedValue as Int
+                val lp = btn.layoutParams
+                lp.width = w
+                btn.layoutParams = lp
+            }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    layoutVoiceVisualizer?.visibility = View.GONE
+                    ivIcon?.visibility = View.VISIBLE
+                    btn.setBackgroundResource(R.drawable.bg_floating_ai_pill)
+
+                    val screenWidth = resources.displayMetrics.widthPixels
+                    val pillCenterX = overlayLayoutParams.x + (badgeSizePx / 2)
+                    val snapSide = if (pillCenterX < screenWidth / 2) "LEFT" else "RIGHT"
+                    val targetSnapX = if (snapSide == "LEFT") {
+                        badgeMarginEdgePx - rootPaddingPx
+                    } else {
+                        screenWidth - badgeSizePx - badgeMarginEdgePx - rootPaddingPx
+                    }
+                    animateSnapTo(targetSnapX, snapSide)
+                    onEnd()
+                }
+            })
+        }
+        anim.start()
     }
 
     /**
@@ -1228,14 +1338,9 @@ class RewriteAccessibilityService : AccessibilityService() {
             smoothedAmplitude = 0f
 
             btnRewrite?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            btnRewrite?.setBackgroundResource(R.drawable.bg_pill_recording)
 
-            // Activate visualizer: hide logo emblem, show visualizer container with breathing red dot
-            ivIcon?.visibility = View.GONE
-            layoutVoiceVisualizer?.visibility = View.VISIBLE
-            viewRedSilenceIndicator?.visibility = View.VISIBLE
-            layoutWaveBars?.visibility = View.GONE
-            startSilenceBreathingAnimation()
+            // Smoothly expand pill into Whisper Flow recording capsule
+            expandCapsuleForRecording()
 
             // Start live amplitude waveform polling
             mainHandler.removeCallbacks(visualizerRunnable)
@@ -1255,7 +1360,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Stops voice recording and sends the audio file to Groq Whisper V3 for transcription + rewriting.
+     * Stops voice recording, collapses the capsule, and sends audio to Groq Whisper for transcription.
      */
     private fun stopVoiceRecording(discard: Boolean = false) {
         if (!isRecording && mediaRecorder == null) return
@@ -1264,7 +1369,6 @@ class RewriteAccessibilityService : AccessibilityService() {
         isRecording = false
         mainHandler.removeCallbacks(visualizerRunnable)
         mainHandler.removeCallbacks(maxRecordingTimeoutRunnable)
-        stopSilenceBreathingAnimation()
 
         // 1. Release Foreground Service and Notification
         try {
@@ -1294,14 +1398,8 @@ class RewriteAccessibilityService : AccessibilityService() {
             Log.e(TAG, "Error abandoning audio focus", e)
         }
 
-        // Reset visualizer views and restore emblem icon & default pill background
-        layoutVoiceVisualizer?.visibility = View.GONE
-        viewRedSilenceIndicator?.visibility = View.GONE
-        layoutWaveBars?.visibility = View.GONE
-        ivIcon?.visibility = View.VISIBLE
-        btnRewrite?.scaleX = 1.0f
-        btnRewrite?.scaleY = 1.0f
-        btnRewrite?.setBackgroundResource(R.drawable.bg_floating_ai_pill)
+        // 3. Smoothly collapse capsule back to 44dp circular pill
+        collapseCapsule()
 
         try {
             mediaRecorder?.stop()
@@ -1332,28 +1430,29 @@ class RewriteAccessibilityService : AccessibilityService() {
                     val inputNode = findActiveInputNode()
                     if (inputNode != null) {
                         val fullText = extractTextFromNode(inputNode)
+                        val cleanExistingText = if (isPlaceholderText(fullText)) "" else fullText
                         val nodeSelStart = inputNode.textSelectionStart
                         val nodeSelEnd = inputNode.textSelectionEnd
                         val (selStart, selEnd, hasSelection) = when {
-                            nodeSelStart in 0..fullText.length && nodeSelEnd in 0..fullText.length && nodeSelStart != nodeSelEnd -> {
+                            nodeSelStart in 0..cleanExistingText.length && nodeSelEnd in 0..cleanExistingText.length && nodeSelStart != nodeSelEnd -> {
                                 val s = minOf(nodeSelStart, nodeSelEnd)
                                 val e = maxOf(nodeSelStart, nodeSelEnd)
                                 Triple(s, e, true)
                             }
-                            lastSelectionStart in 0..fullText.length && lastSelectionEnd in 0..fullText.length && lastSelectionStart < lastSelectionEnd -> {
+                            lastSelectionStart in 0..cleanExistingText.length && lastSelectionEnd in 0..cleanExistingText.length && lastSelectionStart < lastSelectionEnd -> {
                                 Triple(lastSelectionStart, lastSelectionEnd, true)
                             }
                             else -> Triple(0, 0, false)
                         }
 
                         if (hasSelection) {
-                            val newFull = fullText.substring(0, selStart) + finalText + fullText.substring(selEnd)
+                            val newFull = cleanExistingText.substring(0, selStart) + finalText + cleanExistingText.substring(selEnd)
                             injectText(inputNode, newFull, newCursorPos = selStart + finalText.length)
                             lastSelectionStart = -1
                             lastSelectionEnd = -1
-                        } else if (fullText.isNotEmpty()) {
-                            val separator = if (fullText.endsWith(" ") || fullText.endsWith("\n")) "" else " "
-                            val newFull = fullText + separator + finalText
+                        } else if (cleanExistingText.isNotEmpty()) {
+                            val separator = if (cleanExistingText.endsWith(" ") || cleanExistingText.endsWith("\n")) "" else " "
+                            val newFull = cleanExistingText + separator + finalText
                             injectText(inputNode, newFull, newCursorPos = newFull.length)
                         } else {
                             injectText(inputNode, finalText, newCursorPos = finalText.length)

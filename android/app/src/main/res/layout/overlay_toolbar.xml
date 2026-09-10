@@ -9,7 +9,7 @@
     android:clickable="true"
     android:focusable="false">
 
-    <!-- 1:1 Circular Floating AI Pill (44dp x 44dp) -->
+    <!-- Morphing AI Pill (44dp circular in normal state, expands to 156dp recording capsule) -->
     <FrameLayout
         android:id="@+id/btnRewrite"
         android:layout_width="44dp"
@@ -21,84 +21,158 @@
         <!-- Progress Spinner (Shown during API call) -->
         <ProgressBar
             android:id="@+id/progressBar"
-            android:layout_width="20dp"
-            android:layout_height="20dp"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
             android:layout_gravity="center"
             android:indeterminate="true"
             android:indeterminateTint="#38BDF8"
             android:visibility="gone" />
 
-        <!-- Keyflow Emblem Logo -->
+        <!-- Keyflow Mode Icon (Scaled up to 30dp for crisp, prominent visibility) -->
         <ImageView
             android:id="@+id/ivIcon"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
             android:layout_gravity="center"
             android:src="@drawable/ic_keyflow_emblem"
             android:contentDescription="@string/app_name"
             android:visibility="visible" />
 
-        <!-- Voice Recording Visualizer Container -->
-        <FrameLayout
+        <!-- Whisper Flow Style Live Wave Recording Capsule Container -->
+        <LinearLayout
             android:id="@+id/layoutVoiceVisualizer"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_gravity="center"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="6dp"
             android:visibility="gone">
 
-            <!-- Red Silence Indicator Dot (breathing live icon when silent) -->
-            <View
-                android:id="@+id/viewRedSilenceIndicator"
-                android:layout_width="12dp"
-                android:layout_height="12dp"
-                android:layout_gravity="center"
-                android:background="@drawable/bg_silence_red_dot"
-                android:visibility="visible" />
+            <!-- Cancel Button (X) -->
+            <FrameLayout
+                android:id="@+id/btnCancelVoice"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/bg_voice_cancel_btn"
+                android:clickable="true"
+                android:focusable="false">
 
-            <!-- Frequency / Amplitude Waveform Bars (shown when voice detected) -->
+                <ImageView
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_voice_cancel"
+                    android:contentDescription="Cancel Recording" />
+            </FrameLayout>
+
+            <!-- Live Organic Soundwave Bars (11 Luminous Vertical Bars) -->
             <LinearLayout
                 android:id="@+id/layoutWaveBars"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="center"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="match_parent"
                 android:orientation="horizontal"
                 android:gravity="center"
-                android:visibility="gone">
+                android:paddingHorizontal="4dp">
 
-                <!-- Bar 1 -->
                 <View
                     android:id="@+id/waveBar1"
-                    android:layout_width="3dp"
-                    android:layout_height="7dp"
-                    android:layout_marginHorizontal="1.5dp"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
                     android:background="@drawable/bg_wave_bar" />
 
-                <!-- Bar 2 (Core left peak) -->
                 <View
                     android:id="@+id/waveBar2"
-                    android:layout_width="3dp"
-                    android:layout_height="14dp"
-                    android:layout_marginHorizontal="1.5dp"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
                     android:background="@drawable/bg_wave_bar" />
 
-                <!-- Bar 3 (Core right peak) -->
                 <View
                     android:id="@+id/waveBar3"
-                    android:layout_width="3dp"
+                    android:layout_width="2.5dp"
                     android:layout_height="12dp"
-                    android:layout_marginHorizontal="1.5dp"
+                    android:layout_marginHorizontal="1.2dp"
                     android:background="@drawable/bg_wave_bar" />
 
-                <!-- Bar 4 -->
                 <View
                     android:id="@+id/waveBar4"
-                    android:layout_width="3dp"
-                    android:layout_height="6dp"
-                    android:layout_marginHorizontal="1.5dp"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
                     android:background="@drawable/bg_wave_bar" />
+
+                <View
+                    android:id="@+id/waveBar5"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <View
+                    android:id="@+id/waveBar6"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <View
+                    android:id="@+id/waveBar7"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <View
+                    android:id="@+id/waveBar8"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <View
+                    android:id="@+id/waveBar9"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <View
+                    android:id="@+id/waveBar10"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
+                    android:background="@drawable/bg_wave_bar" />
+
+                <View
+                    android:id="@+id/waveBar11"
+                    android:layout_width="2.5dp"
+                    android:layout_height="12dp"
+                    android:layout_marginHorizontal="1.2dp"
+                    android:background="@drawable/bg_wave_bar" />
+
             </LinearLayout>
 
-        </FrameLayout>
+            <!-- Done / Confirm Button (✓) -->
+            <FrameLayout
+                android:id="@+id/btnDoneVoice"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:background="@drawable/bg_voice_done_btn"
+                android:clickable="true"
+                android:focusable="false">
+
+                <ImageView
+                    android:layout_width="15dp"
+                    android:layout_height="15dp"
+                    android:layout_gravity="center"
+                    android:src="@drawable/ic_voice_done"
+                    android:contentDescription="Finish Recording" />
+            </FrameLayout>
+
+        </LinearLayout>
 
     </FrameLayout>
 
