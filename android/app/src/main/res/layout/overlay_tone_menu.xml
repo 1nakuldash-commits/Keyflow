@@ -1,81 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/rootToneMenu"
-    android:layout_width="wrap_content"
+    android:layout_width="136dp"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
+    android:orientation="vertical"
     android:background="@drawable/bg_tone_menu"
-    android:paddingStart="6dp"
-    android:paddingEnd="6dp"
-    android:paddingTop="5dp"
-    android:paddingBottom="5dp"
-    android:elevation="12dp"
+    android:padding="6dp"
+    android:elevation="14dp"
     android:clipToPadding="false"
     android:clipChildren="false">
 
-    <!-- Simple / General Mode Chip -->
+    <!-- Simple Mode -->
     <TextView
         android:id="@+id/chipToneSimple"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:gravity="center"
-        android:text="⚡ Simple"
-        android:textSize="12sp"
-        android:textStyle="bold"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:gravity="center_vertical|start"
+        android:text="Simple"
+        android:textSize="13sp"
         android:textColor="#F8FAFC"
+        android:fontFamily="sans-serif-medium"
         android:background="@drawable/bg_tone_chip_active"
         android:clickable="true"
         android:focusable="true" />
 
-    <!-- Formal Mode Chip -->
+    <!-- Hairline Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginHorizontal="6dp"
+        android:layout_marginVertical="2dp"
+        android:background="#15FFFFFF" />
+
+    <!-- Formal Mode -->
     <TextView
         android:id="@+id/chipToneFormal"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginStart="4dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:gravity="center"
-        android:text="👔 Formal"
-        android:textSize="12sp"
-        android:textStyle="bold"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:gravity="center_vertical|start"
+        android:text="Formal"
+        android:textSize="13sp"
         android:textColor="#94A3B8"
+        android:fontFamily="sans-serif-medium"
         android:background="@drawable/bg_tone_chip_inactive"
         android:clickable="true"
         android:focusable="true" />
 
-    <!-- Professional Mode Chip -->
+    <!-- Hairline Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginHorizontal="6dp"
+        android:layout_marginVertical="2dp"
+        android:background="#15FFFFFF" />
+
+    <!-- Professional Mode -->
     <TextView
         android:id="@+id/chipToneProfessional"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginStart="4dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:gravity="center"
-        android:text="💼 Pro"
-        android:textSize="12sp"
-        android:textStyle="bold"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:gravity="center_vertical|start"
+        android:text="Professional"
+        android:textSize="13sp"
         android:textColor="#94A3B8"
+        android:fontFamily="sans-serif-medium"
         android:background="@drawable/bg_tone_chip_inactive"
         android:clickable="true"
         android:focusable="true" />
 
-    <!-- Email Mode Chip -->
+    <!-- Hairline Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0.5dp"
+        android:layout_marginHorizontal="6dp"
+        android:layout_marginVertical="2dp"
+        android:background="#15FFFFFF" />
+
+    <!-- Email Mode -->
     <TextView
         android:id="@+id/chipToneEmail"
-        android:layout_width="wrap_content"
-        android:layout_height="32dp"
-        android:layout_marginStart="4dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:gravity="center"
-        android:text="✉️ Email"
-        android:textSize="12sp"
-        android:textStyle="bold"
+        android:layout_width="match_parent"
+        android:layout_height="38dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:gravity="center_vertical|start"
+        android:text="Email"
+        android:textSize="13sp"
         android:textColor="#94A3B8"
+        android:fontFamily="sans-serif-medium"
         android:background="@drawable/bg_tone_chip_inactive"
         android:clickable="true"
         android:focusable="true" />

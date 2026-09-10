@@ -180,7 +180,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="6dp"
-        android:text="Tap above to open keyboard. Keyflow docks above Gboard:\n• Single-tap: Rewrite with active tone\n• Double-tap: Switch tones (Simple, Formal, Pro, Email)\n• Long-press &amp; drag: Reposition anywhere"
+        android:text="Tap above to open keyboard. Keyflow docks above Gboard:\n• Single-tap: Instant rewrite with active tone\n• Click &amp; hold: Vertical liquid-glass tone selector\n• Press &amp; drag: Reposition anywhere smoothly"
         android:textSize="12sp"
         android:textColor="@color/text_secondary"
         android:lineSpacingExtra="2dp" />

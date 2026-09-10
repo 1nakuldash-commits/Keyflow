@@ -44,7 +44,7 @@ load_env_file()
 app = FastAPI(
     title="Keyflow Rewrite API",
     description="Multi-model AI backend supporting Groq & Gemini with 4 rewrite tones",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 # Enable CORS for all origins
@@ -65,83 +65,42 @@ class RewriteResponse(BaseModel):
     provider: Optional[str] = "groq"
     tone: Optional[str] = "simple"
 
-# Tone-specific prompt configurations
-TONE_CONFIGS = {
-    "simple": {
-        "goal": "Rewrite the text into natural, clean, simple everyday conversational English.",
-        "extra_rules": (
-            "Keep the phrasing casual, warm, and natural as people normally speak in everyday messaging."
-        )
-    },
-    "formal": {
-        "goal": "Rewrite the text into courteous, polite, respectful, and grammatically polished formal English.",
-        "extra_rules": (
-            "Use respectful phrasing, proper polite honorifics, and meticulous formal grammar."
-        )
-    },
-    "professional": {
-        "goal": "Rewrite the text into crisp, confident, concise, and executive corporate workplace English.",
-        "extra_rules": (
-            "Ensure the output sounds authoritative, clear, and business-ready. Avoid fluff or overly chatty slang."
-        )
-    },
-    "email": {
-        "goal": "Format and rewrite the text into a complete, professional email.",
-        "extra_rules": (
-            "Format the response strictly as follows:\n"
-            "Subject: <Concise, relevant subject line>\n\n"
-            "Dear <Recipient/Team>,\n\n"
-            "<Opening sentence clearly stating purpose>\n\n"
-            "<Main body paragraph with necessary details>\n\n"
-            "Best regards,\n"
-            "[Your Name]"
-        )
-    }
+# Ultra-compact, token-optimized system prompts (< 50 tokens each vs previous 450+ tokens)
+# Specifically tuned for authentic human writing without AI em-dashes (—)
+SYSTEM_PROMPTS = {
+    "simple": (
+        "You are Keyflow. Rewrite rough text, typos, or Indian languages (Hindi, Hinglish, etc.) "
+        "into clean, warm, natural conversational English like a real person texting a friend. "
+        "Sound natural and human. Do NOT use em-dashes (—). Output ONLY the rewritten text."
+    ),
+    "formal": (
+        "You are Keyflow. Rewrite rough text or Indian languages into polite, respectful formal English. "
+        "Write like an articulate, polished human, not an AI. Do NOT use em-dashes (—) or robotic jargon. "
+        "Output ONLY the rewritten text."
+    ),
+    "professional": (
+        "You are Keyflow. Rewrite rough text or Indian languages into crisp, confident workplace English. "
+        "Sound like an authentic business professional, not an AI. Do NOT use em-dashes (—). "
+        "Output ONLY the rewritten text."
+    ),
+    "email": (
+        "You are Keyflow. Convert rough text into a clean, human-written professional email without em-dashes (—). "
+        "Format strictly as:\n"
+        "Subject: <Subject>\n\n"
+        "Dear <Name>,\n\n"
+        "<Body>\n\n"
+        "Best regards,\n"
+        "[Your Name]\n"
+        "Output ONLY the email text."
+    )
 }
 
-BASE_SYSTEM_PROMPT = """You are Keyflow, an expert multilingual AI rewriting engine engineered for mobile keyboards.
-The user writes rough English, typos, slang, or Indian languages (Hindi, Hinglish, Tamil, Tanglish, Telugu, Kannada, Bengali, Marathi, etc.).
-
-CORE DIRECTIVES:
-1. UNDERSTAND CONTEXT & MEANING: Fully interpret colloquial Indian phrasing, Romanized scripts (e.g. Hinglish "bhai kal meeting me kya discuss karna hai"), and intent. Do NOT translate word-for-word robotically; convey the true human intent into fluent English.
-2. FULL LENGTH PRESERVATION: Handle single words, multi-sentence messages, and paragraphs. Never drop or omit thoughts.
-3. FIX ALL ERRORS: Automatically correct spelling, typos, and broken grammar.
-4. STRICT OUTPUT FORMAT: Output ONLY the rewritten text. Never add explanations, introductory greetings (e.g. 'Here is your rewrite:'), notes, or wrapping quotation marks.
-
-FEW-SHOT CONTEXT EXAMPLES:
-Input: bhai kal subah meeting me kya discuss karna hai bata de please
-Output (Simple): Please tell me what we need to discuss in tomorrow morning's meeting.
-
-Input: Mughe kuch chize thumhe se jaanna tha.
-Output (Simple): I wanted to know a few things from you.
-
-Input: Naan nalaiku varamudiyadhu enaku udambu sari illa
-Output (Simple): I won't be able to come tomorrow as I am unwell.
-
-Input: Nenu repu ralenandi konchem work undi
-Output (Simple): I will not be able to come tomorrow as I have some work.
-
-Input: Hey bro kaha per rahe gaye im weighting for you
-Output (Simple): Hey bro, where are you? I'm waiting for you.
-"""
-
-def build_prompt(text: str, tone: str) -> str:
-    normalized_tone = (tone or "simple").lower().strip()
-    if normalized_tone not in TONE_CONFIGS:
-        normalized_tone = "simple"
-
-    config = TONE_CONFIGS[normalized_tone]
-    prompt = (
-        f"{BASE_SYSTEM_PROMPT}\n"
-        f"TONE TARGET: {config['goal']}\n"
-        f"SPECIFIC INSTRUCTIONS: {config['extra_rules']}\n\n"
-        f"Input: {text}\n"
-        f"Output:"
-    )
-    return prompt
+def get_system_prompt(tone: str) -> str:
+    norm = (tone or "simple").lower().strip()
+    return SYSTEM_PROMPTS.get(norm, SYSTEM_PROMPTS["simple"])
 
 def clean_output(raw_text: str, is_email: bool = False) -> str:
-    """Strips thinking scratchpads, outer quotes, prefixes, and markdown blocks."""
+    """Strips thinking scratchpads, outer quotes, prefixes, and markdown blocks, ensuring zero em-dashes."""
     if not raw_text:
         return ""
 
@@ -173,19 +132,22 @@ def clean_output(raw_text: str, is_email: bool = False) -> str:
             text = text[1:-1].strip()
         text = text.strip('"\'`')
 
+    # 5. Eliminate artificial AI em-dashes and replace with natural human punctuation
+    text = text.replace("—", ", ").replace(" – ", ", ").replace(" -- ", ", ")
+    text = re.sub(r"(\s*,\s*)+", ", ", text)
+
     return text.strip()
 
 async def rewrite_with_groq(text: str, tone: str, api_key: str) -> Optional[str]:
-    """Calls Groq API with ultra-fast LPU inference (qwen/qwen3.8-27b)."""
+    """Calls Groq API with ultra-fast LPU inference (qwen/qwen3.8-27b). Token-optimized."""
     is_email = (tone or "").lower().strip() == "email"
-    prompt = build_prompt(text, tone)
+    sys_prompt = get_system_prompt(tone)
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    
-    # Models on Groq: qwen/qwen3.8-27b (primary ~0.6s), groq/compound-mini (backup)
+
     models_to_try = ["qwen/qwen3.8-27b", "groq/compound-mini"]
 
     async with httpx.AsyncClient(timeout=4.0) as client:
@@ -193,10 +155,11 @@ async def rewrite_with_groq(text: str, tone: str, api_key: str) -> Optional[str]
             payload = {
                 "model": model,
                 "messages": [
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": text}
                 ],
-                "temperature": 0.2,
-                "max_tokens": 512 if is_email else 256
+                "temperature": 0.25,
+                "max_tokens": 350 if is_email else 180
             }
             try:
                 res = await client.post(url, headers=headers, json=payload)
@@ -217,9 +180,10 @@ async def rewrite_with_groq(text: str, tone: str, api_key: str) -> Optional[str]
     return None
 
 async def rewrite_with_gemini(text: str, tone: str, api_key: str) -> Optional[str]:
-    """Calls Google Gemini API as fallback (gemini-3.5-flash-lite / gemini-3.6-flash)."""
+    """Calls Google Gemini API as fallback (gemini-3.5-flash-lite / gemini-3.6-flash). Token-optimized."""
     is_email = (tone or "").lower().strip() == "email"
-    full_prompt = build_prompt(text, tone)
+    sys_prompt = get_system_prompt(tone)
+    full_prompt = f"{sys_prompt}\n\nInput text: {text}\nOutput:"
     candidate_models = ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
 
     # 1. Try google-genai SDK
@@ -231,8 +195,8 @@ async def rewrite_with_gemini(text: str, tone: str, api_key: str) -> Optional[st
         for model_name in candidate_models:
             try:
                 config = types.GenerateContentConfig(
-                    max_output_tokens=768 if is_email else 256,
-                    temperature=0.2,
+                    max_output_tokens=400 if is_email else 200,
+                    temperature=0.25,
                 )
                 response = client.models.generate_content(
                     model=model_name,
@@ -275,7 +239,7 @@ async def rewrite_with_gemini(text: str, tone: str, api_key: str) -> Optional[st
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
             payload = {
                 "contents": [{"parts": [{"text": full_prompt}]}],
-                "generationConfig": {"maxOutputTokens": 768 if is_email else 256}
+                "generationConfig": {"maxOutputTokens": 400 if is_email else 200}
             }
             try:
                 res = await client.post(url, json=payload)
@@ -306,7 +270,7 @@ def mock_local_rewrite(text: str, tone: str) -> str:
 
     if norm_tone == "email":
         return (
-            "Subject: Update Regarding Our Conversation\n\n"
+            "Subject: Follow-up Regarding Our Conversation\n\n"
             "Dear Colleague,\n\n"
             f"I am writing to follow up regarding: {text.strip()}\n\n"
             "Please let me know if you have any questions.\n\n"
@@ -315,7 +279,7 @@ def mock_local_rewrite(text: str, tone: str) -> str:
         )
 
     if "kya scene" in lower or "are you coming" in lower:
-        return "What is the plan? Are you coming today?"
+        return "What's the plan? Are you coming today?"
     if "kal meeting" in lower:
         return "What time is the meeting tomorrow?"
     if "kaise ho" in lower:
@@ -337,11 +301,11 @@ def mock_local_rewrite(text: str, tone: str) -> str:
 async def root():
     return {
         "service": "Keyflow Rewrite API",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "status": "online",
         "groq_configured": bool(os.environ.get("GROQ_API_KEY")),
         "gemini_configured": bool(os.environ.get("GEMINI_API_KEY")),
-        "supported_tones": list(TONE_CONFIGS.keys())
+        "supported_tones": list(SYSTEM_PROMPTS.keys())
     }
 
 @app.post("/")
@@ -366,7 +330,7 @@ async def rewrite_text(req: RewriteRequest):
     provider: str = "offline"
 
     # Multi-Model Cascade:
-    # Priority 1: Groq LPU (Ultra-Fast ~0.6s)
+    # Priority 1: Groq LPU (Ultra-Fast ~0.5s)
     if groq_key:
         try:
             result = await rewrite_with_groq(input_text, tone, groq_key)

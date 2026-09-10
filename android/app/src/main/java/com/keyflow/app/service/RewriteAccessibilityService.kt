@@ -28,6 +28,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -63,8 +64,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val ROOT_PADDING_DP = 8
         private const val BADGE_MARGIN_EDGE_DP = 6 // Clean 6dp spacing hugging screen edge
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
-        private const val LONG_PRESS_THRESHOLD_MS = 240L
-        private const val DOUBLE_TAP_TIMEOUT_MS = 260L
+        private const val LONG_PRESS_THRESHOLD_MS = 260L
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
     }
 
@@ -78,11 +78,9 @@ class RewriteAccessibilityService : AccessibilityService() {
     private var progressBar: ProgressBar? = null
     private var snapAnimator: ValueAnimator? = null
 
-    // Tone Menu State & Gesture Disambiguation
+    // Vertical Tone Menu State
     private var toneMenuView: View? = null
     private var isToneMenuAttached = false
-    private var pendingSingleTapRunnable: Runnable? = null
-    private var lastTapTime = 0L
 
     private var isOverlayAttached = false
     private var isHiding = false
@@ -193,32 +191,31 @@ class RewriteAccessibilityService : AccessibilityService() {
         val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
 
         val longPressRunnable = Runnable {
+            if (isDragging) return@Runnable
             longPressTriggered = true
-            isDragging = true
-            isUserDragging = true
-
-            // Cancel any tone menu and tap timers if dragging begins
-            dismissToneMenu()
-            pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
-            pendingSingleTapRunnable = null
 
             // Cancel any ongoing magnetic snap
             snapAnimator?.cancel()
 
-            // Lock the exact origin at the moment drag is unlocked to prevent any jump
-            dragStartParamX = overlayLayoutParams.x
-            dragStartParamY = overlayLayoutParams.y
-            dragStartRawX = lastTouchRawX
-            dragStartRawY = lastTouchRawY
-
             touchTarget.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
 
-            // Tactile feedback: gently scale inner circular pill without clipping
+            // Tactile liquid-glass pulse on the pill
             touchTarget.animate()
-                .scaleX(1.08f)
-                .scaleY(1.08f)
-                .setDuration(120)
+                .scaleX(1.10f)
+                .scaleY(1.10f)
+                .setDuration(160)
+                .setInterpolator(OvershootInterpolator(1.4f))
+                .withEndAction {
+                    touchTarget.animate()
+                        .scaleX(1.04f)
+                        .scaleY(1.04f)
+                        .setDuration(120)
+                        .start()
+                }
                 .start()
+
+            // Open the vertical liquid-glass Tone Menu
+            showToneMenu()
         }
 
         touchTarget.setOnTouchListener { _, event ->
@@ -229,6 +226,10 @@ class RewriteAccessibilityService : AccessibilityService() {
                     initialTouchRawY = event.rawY
                     lastTouchRawX = event.rawX
                     lastTouchRawY = event.rawY
+                    dragStartParamX = overlayLayoutParams.x
+                    dragStartParamY = overlayLayoutParams.y
+                    dragStartRawX = event.rawX
+                    dragStartRawY = event.rawY
                     isDragging = false
                     isUserDragging = false
                     longPressTriggered = false
@@ -241,12 +242,17 @@ class RewriteAccessibilityService : AccessibilityService() {
                     lastTouchRawY = event.rawY
 
                     if (!longPressTriggered) {
-                        // Cancel long press if user moves past touch slop before threshold
                         val moveDist = hypot((event.rawX - initialTouchRawX).toDouble(), (event.rawY - initialTouchRawY).toDouble())
                         if (moveDist > touchSlop) {
+                            // Finger moved past touch slop -> Immediate press and drag!
                             mainHandler.removeCallbacks(longPressRunnable)
+                            isDragging = true
+                            isUserDragging = true
+                            dismissToneMenu()
                         }
-                    } else if (isDragging) {
+                    }
+
+                    if (isDragging) {
                         val dx = (event.rawX - dragStartRawX).toInt()
                         val dy = (event.rawY - dragStartRawY).toInt()
 
@@ -282,14 +288,14 @@ class RewriteAccessibilityService : AccessibilityService() {
                 MotionEvent.ACTION_UP -> {
                     mainHandler.removeCallbacks(longPressRunnable)
 
-                    if (isDragging) {
-                        // Smoothly restore normal scale
-                        touchTarget.animate()
-                            .scaleX(1.0f)
-                            .scaleY(1.0f)
-                            .setDuration(120)
-                            .start()
+                    // Smoothly reset pill scale back to normal
+                    touchTarget.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(140)
+                        .start()
 
+                    if (isDragging) {
                         isDragging = false
                         isUserDragging = false
 
@@ -306,36 +312,19 @@ class RewriteAccessibilityService : AccessibilityService() {
                         }
 
                         animateSnapTo(targetSnapX, snapSide)
-                    } else {
+                    } else if (longPressTriggered) {
+                        // Hold was triggered and vertical menu is open. Do not trigger rewrite.
                         isUserDragging = false
-                        val now = SystemClock.uptimeMillis()
-                        if (now - lastTapTime < DOUBLE_TAP_TIMEOUT_MS) {
-                            // Double-Tap Detected -> Cancel pending single tap and toggle Tone Menu
-                            pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
-                            pendingSingleTapRunnable = null
-                            lastTapTime = 0L
-
-                            touchTarget.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                            toggleToneMenu()
-                        } else {
-                            // First Tap: Schedule single-tap rewrite execution after 220ms
-                            lastTapTime = now
-                            pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
-                            val task = Runnable {
-                                pendingSingleTapRunnable = null
-                                handleRewriteClicked()
-                            }
-                            pendingSingleTapRunnable = task
-                            mainHandler.postDelayed(task, 220L)
-                        }
+                    } else {
+                        // Instant Single Tap (0ms latency, double-tap delay eliminated!)
+                        isUserDragging = false
+                        handleRewriteClicked()
                     }
                     true
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
                     mainHandler.removeCallbacks(longPressRunnable)
-                    pendingSingleTapRunnable?.let { mainHandler.removeCallbacks(it) }
-                    pendingSingleTapRunnable = null
                     touchTarget.animate().scaleX(1.0f).scaleY(1.0f).setDuration(120).start()
                     isDragging = false
                     isUserDragging = false
@@ -997,18 +986,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Toggles the Tone Switcher Menu on double-tap of the floating AI pill.
-     */
-    private fun toggleToneMenu() {
-        if (isToneMenuAttached) {
-            dismissToneMenu()
-        } else {
-            showToneMenu()
-        }
-    }
-
-    /**
-     * Displays the sleek glassmorphic tone selector menu adjacent to the circular pill.
+     * Displays the minimal ChatGPT-inspired vertical tone selector menu adjacent to the circular pill.
      */
     private fun showToneMenu() {
         if (!isOverlayAttached || overlayView == null) return
@@ -1040,6 +1018,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         val menuHeight = menuView.measuredHeight
 
         val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
         val density = resources.displayMetrics.density
         val edgeMargin = (8 * density).toInt()
 
@@ -1057,7 +1036,15 @@ class RewriteAccessibilityService : AccessibilityService() {
             candidateX.coerceAtLeast(edgeMargin)
         }
 
-        val targetY = pillCenterY - (menuHeight / 2)
+        // Clamp vertically so the menu stays completely above the keyboard without dipping below
+        val maxAllowedBottom = if (activeDockedKeyboardTop > 0) activeDockedKeyboardTop - (6 * density).toInt() else screenHeight - (6 * density).toInt()
+        var targetY = pillCenterY - (menuHeight / 2)
+        if (targetY + menuHeight > maxAllowedBottom) {
+            targetY = maxAllowedBottom - menuHeight
+        }
+        if (targetY < (24 * density).toInt()) {
+            targetY = (24 * density).toInt()
+        }
 
         val lp = WindowManager.LayoutParams().apply {
             type = WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
@@ -1084,9 +1071,17 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
         }
 
+        // Apple liquid glass bloom physics
         menuView.alpha = 0f
-        menuView.scaleX = 0.85f
-        menuView.scaleY = 0.85f
+        menuView.scaleX = 0.70f
+        menuView.scaleY = 0.70f
+        if (isPillOnLeft) {
+            menuView.pivotX = 0f
+            menuView.pivotY = (menuHeight / 2f).coerceIn(0f, menuHeight.toFloat())
+        } else {
+            menuView.pivotX = menuWidth.toFloat()
+            menuView.pivotY = (menuHeight / 2f).coerceIn(0f, menuHeight.toFloat())
+        }
 
         try {
             windowManager.addView(menuView, lp)
@@ -1095,10 +1090,10 @@ class RewriteAccessibilityService : AccessibilityService() {
                 .alpha(1f)
                 .scaleX(1f)
                 .scaleY(1f)
-                .setDuration(160)
-                .setInterpolator(DecelerateInterpolator())
+                .setDuration(190)
+                .setInterpolator(OvershootInterpolator(1.3f))
                 .start()
-            Log.d(TAG, "Tone menu attached at X=$targetX, Y=$targetY")
+            Log.d(TAG, "Vertical liquid-glass tone menu attached at X=$targetX, Y=$targetY")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to attach tone menu to WindowManager", e)
             toneMenuView = null
@@ -1151,7 +1146,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
         mainHandler.postDelayed({
             dismissToneMenu()
-        }, 220L)
+        }, 180L)
     }
 
     private fun dismissToneMenu() {
@@ -1161,8 +1156,8 @@ class RewriteAccessibilityService : AccessibilityService() {
 
         viewToDismiss.animate()
             .alpha(0f)
-            .scaleX(0.85f)
-            .scaleY(0.85f)
+            .scaleX(0.75f)
+            .scaleY(0.75f)
             .setDuration(120)
             .withEndAction {
                 try {
