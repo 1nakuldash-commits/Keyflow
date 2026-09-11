@@ -1,31 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Background & Glass surfaces -->
+    <!-- Dark Theme Backgrounds & Surfaces -->
+    <color name="bg_dark_base">#080A10</color>
+    <color name="bg_card_surface">#121622</color>
+    <color name="bg_card_surface_elevated">#181D2D</color>
+    <color name="bg_card_surface_subtle">#0F121C</color>
+    <color name="border_subtle">#1E2436</color>
+    <color name="border_focused">#38BDF8</color>
+    <color name="border_glass">#25304B</color>
+
+    <!-- Legacy Glass surfaces -->
     <color name="glass_surface">#E612141A</color>
     <color name="glass_border">#33FFFFFF</color>
     <color name="glass_surface_elevated">#F21A1D24</color>
 
-    <!-- Accent colors -->
+    <!-- Brand & Accent Colors -->
     <color name="accent_primary">#8B5CF6</color>
     <color name="accent_primary_dark">#7C3AED</color>
     <color name="accent_pill">#252033</color>
     <color name="accent_pill_border">#5C4880</color>
+    <color name="accent_cyan">#38BDF8</color>
+    <color name="accent_cyan_glow">#2238BDF8</color>
+    <color name="accent_violet_glow">#228B5CF6</color>
 
     <!-- Button states -->
-    <color name="button_bg">#232630</color>
-    <color name="button_bg_pressed">#353B4A</color>
-    <color name="button_stroke">#3D4455</color>
+    <color name="button_bg">#1B2030</color>
+    <color name="button_bg_pressed">#283048</color>
+    <color name="button_stroke">#2B354F</color>
 
-    <!-- Text colors -->
+    <!-- Status & Notification Badges -->
+    <color name="status_green">#10B981</color>
+    <color name="status_green_bg">#132B24</color>
+    <color name="status_green_border">#23634C</color>
+    <color name="status_gray">#64748B</color>
+    <color name="status_gray_bg">#1A202C</color>
+    <color name="status_amber">#F59E0B</color>
+    <color name="status_amber_bg">#2E2211</color>
+    <color name="status_amber_border">#694715</color>
+    <color name="status_red">#EF4444</color>
+
+    <!-- Typography -->
     <color name="text_primary">#F8FAFC</color>
     <color name="text_secondary">#94A3B8</color>
+    <color name="text_tertiary">#64748B</color>
     <color name="text_brand">#C4B5FD</color>
 
-    <!-- Indicators -->
-    <color name="status_green">#10B981</color>
-    <color name="status_gray">#64748B</color>
-
-    <!-- Android standard replacements -->
+    <!-- Standard Colors -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>

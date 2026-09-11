@@ -89,13 +89,17 @@ class RewriteAccessibilityService : AccessibilityService() {
         const val TONE_PROFESSIONAL = "professional"
         private const val DEFAULT_TONE = TONE_NORMAL
 
+        @Volatile
+        var isServiceRunning = false
+            internal set
+
         private const val BADGE_SIZE_DP = 44
         private const val CAPSULE_EXPANDED_WIDTH_DP = 156
         private const val ROOT_PADDING_DP = 8
         private const val BADGE_MARGIN_EDGE_DP = 10 // Clean 10dp margin for both pill and popup menu
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
         private const val LONG_PRESS_THRESHOLD_MS = 260L
-        private const val DOUBLE_TAP_THRESHOLD_MS = 200L
+        private const val DOUBLE_TAP_THRESHOLD_MS = 280L
         private const val MENU_WIDTH_DP = 132
         private const val KEY_PREVIEW_IGNORE_THRESHOLD_PX = 120
 
@@ -173,6 +177,61 @@ class RewriteAccessibilityService : AccessibilityService() {
     // Vertical Tone Menu State
     private var toneMenuView: View? = null
     private var isToneMenuAttached = false
+
+    // Visual state controller to eliminate desynchronization and isolated (X) icons
+    enum class OverlayVisualState {
+        IDLE,
+        RECORDING,
+        LOADING
+    }
+
+    private var currentVisualState = OverlayVisualState.IDLE
+    private var isLoading = false
+
+    private fun applyOverlayVisualState(state: OverlayVisualState) {
+        currentVisualState = state
+        val btn = btnRewrite ?: return
+        when (state) {
+            OverlayVisualState.IDLE -> {
+                progressBar?.visibility = View.GONE
+                layoutVoiceVisualizer?.visibility = View.GONE
+                layoutWaveBars?.visibility = View.GONE
+                ivIcon?.visibility = View.VISIBLE
+                updateModeIcon()
+                btn.setBackgroundResource(R.drawable.bg_floating_ai_pill)
+                btn.isEnabled = true
+                btn.alpha = 1.0f
+                val lp = btn.layoutParams
+                if (lp != null && lp.width != badgeSizePx) {
+                    lp.width = badgeSizePx
+                    btn.layoutParams = lp
+                }
+            }
+            OverlayVisualState.RECORDING -> {
+                progressBar?.visibility = View.GONE
+                ivIcon?.visibility = View.GONE
+                layoutVoiceVisualizer?.visibility = View.VISIBLE
+                layoutWaveBars?.visibility = View.VISIBLE
+                btn.setBackgroundResource(R.drawable.bg_recording_capsule)
+                btn.isEnabled = true
+                btn.alpha = 1.0f
+            }
+            OverlayVisualState.LOADING -> {
+                layoutVoiceVisualizer?.visibility = View.GONE
+                layoutWaveBars?.visibility = View.GONE
+                ivIcon?.visibility = View.GONE
+                progressBar?.visibility = View.VISIBLE
+                btn.setBackgroundResource(R.drawable.bg_floating_ai_pill)
+                btn.isEnabled = false
+                btn.alpha = 0.75f
+                val lp = btn.layoutParams
+                if (lp != null && lp.width != badgeSizePx) {
+                    lp.width = badgeSizePx
+                    btn.layoutParams = lp
+                }
+            }
+        }
+    }
 
     private var isOverlayAttached = false
     private var isHiding = false
@@ -259,10 +318,16 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        isServiceRunning = true
         Log.d(TAG, "Keyflow RewriteAccessibilityService connected")
         createNotificationChannel()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         initOverlayView()
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        isServiceRunning = false
+        return super.onUnbind(intent)
     }
 
     private fun createNotificationChannel() {
@@ -327,7 +392,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             // Restore active mode (Voice-to-Text is default)
             val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
             activeMode = prefs.getString(PREF_ACTIVE_MODE, MODE_VOICE) ?: MODE_VOICE
-            updateModeIcon()
+            applyOverlayVisualState(OverlayVisualState.IDLE)
 
             setupDragAndClickGesture(this, btnRewrite ?: this)
         }
@@ -360,7 +425,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             ?.rotationY(90f)
             ?.setDuration(110)
             ?.withEndAction {
-                updateModeIcon()
+                applyOverlayVisualState(OverlayVisualState.IDLE)
                 btnRewrite?.rotationY = -90f
                 btnRewrite?.animate()
                     ?.rotationY(0f)
@@ -466,8 +531,8 @@ class RewriteAccessibilityService : AccessibilityService() {
                         val totalViewWidth = rootView.width.takeIf { it > 0 } ?: (badgeSizePx + 2 * rootPaddingPx)
                         val totalViewHeight = rootView.height.takeIf { it > 0 } ?: (badgeSizePx + 2 * rootPaddingPx)
 
-                        val minX = -rootPaddingPx
-                        val maxX = maxOf(0, screenWidth - totalViewWidth + rootPaddingPx)
+                        val minX = badgeMarginEdgePx - rootPaddingPx
+                        val maxX = maxOf(minX, screenWidth - totalViewWidth + rootPaddingPx - badgeMarginEdgePx)
                         val minY = (24 * resources.displayMetrics.density).toInt() - rootPaddingPx
                         val maxY = maxOf(minY, screenHeight - totalViewHeight)
 
@@ -1193,10 +1258,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
         }
 
-        btn.setBackgroundResource(R.drawable.bg_recording_capsule)
-        ivIcon?.visibility = View.GONE
-        layoutVoiceVisualizer?.visibility = View.VISIBLE
-        layoutWaveBars?.visibility = View.VISIBLE
+        applyOverlayVisualState(OverlayVisualState.RECORDING)
 
         val anim = ValueAnimator.ofInt(badgeSizePx, targetWidth).apply {
             duration = 240L
@@ -1216,6 +1278,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     private fun collapseCapsule(onEnd: () -> Unit = {}) {
         val btn = btnRewrite ?: return
         if (!isCapsuleExpanded) {
+            applyOverlayVisualState(if (isLoading) OverlayVisualState.LOADING else OverlayVisualState.IDLE)
             onEnd()
             return
         }
@@ -1234,9 +1297,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
-                    layoutVoiceVisualizer?.visibility = View.GONE
-                    ivIcon?.visibility = View.VISIBLE
-                    btn.setBackgroundResource(R.drawable.bg_floating_ai_pill)
+                    applyOverlayVisualState(if (isLoading) OverlayVisualState.LOADING else OverlayVisualState.IDLE)
 
                     val screenWidth = resources.displayMetrics.widthPixels
                     val pillCenterX = overlayLayoutParams.x + (badgeSizePx / 2)
@@ -1358,7 +1419,9 @@ class RewriteAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start recording", e)
             Toast.makeText(this, "Failed to start mic: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-            stopVoiceRecording(discard = true)
+            isRecording = false
+            collapseCapsule()
+            applyOverlayVisualState(OverlayVisualState.IDLE)
         }
     }
 
@@ -1419,6 +1482,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         if (discard || audioFile == null || !audioFile.exists() || audioFile.length() < 100 || duration < MIN_RECORDING_DURATION_MS) {
             audioFile?.delete()
             currentAudioFile = null
+            applyOverlayVisualState(OverlayVisualState.IDLE)
             return
         }
 
@@ -1770,19 +1834,9 @@ class RewriteAccessibilityService : AccessibilityService() {
         Toast.makeText(this, "Copied to clipboard! Tap & paste.", Toast.LENGTH_SHORT).show()
     }
 
-    private fun setLoading(isLoading: Boolean) {
-        progressBar?.visibility = if (isLoading) View.VISIBLE else View.GONE
-        if (isLoading) {
-            ivIcon?.visibility = View.GONE
-            layoutVoiceVisualizer?.visibility = View.GONE
-        } else {
-            if (!isRecording) {
-                ivIcon?.visibility = View.VISIBLE
-                layoutVoiceVisualizer?.visibility = View.GONE
-            }
-        }
-        btnRewrite?.isEnabled = !isLoading
-        btnRewrite?.alpha = if (isLoading) 0.6f else 1.0f
+    private fun setLoading(loading: Boolean) {
+        isLoading = loading
+        applyOverlayVisualState(if (loading) OverlayVisualState.LOADING else OverlayVisualState.IDLE)
     }
 
     /**
@@ -1987,6 +2041,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
+        isServiceRunning = false
         Log.w(TAG, "Keyflow RewriteAccessibilityService interrupted")
         stopVoiceRecording(discard = true)
         hideOverlaySmoothly()
@@ -1996,6 +2051,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isServiceRunning = false
         stopVoiceRecording(discard = true)
         hideOverlaySmoothly()
         lastInteractedInputNode?.recycle()
