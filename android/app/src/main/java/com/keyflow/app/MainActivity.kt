@@ -7,10 +7,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.accessibility.AccessibilityManager
 import android.view.inputmethod.InputMethodManager
-import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -22,30 +22,36 @@ import com.keyflow.app.service.RewriteAccessibilityService
 class MainActivity : AppCompatActivity() {
 
     companion object {
-        const val PREFS_NAME = "keyflow_prefs"
-        const val KEY_BACKEND_URL = "pref_backend_url"
-        const val DEFAULT_BACKEND_URL = "http://10.98.66.198:8000/rewrite"
         private const val REQUEST_CODE_MIC_PERMISSION = 101
     }
 
+    // Header Views
+    private lateinit var btnHeaderSettings: View
+
     // Accessibility Service Views
+    private lateinit var layoutAccessibilityRow: View
     private lateinit var tvServiceStatusBadge: TextView
     private lateinit var tvServiceStatusDesc: TextView
-    private lateinit var btnOpenAccessibility: Button
-    private lateinit var layoutAccessibilityRow: View
 
     // Microphone Permission Views
+    private lateinit var layoutMicRow: View
     private lateinit var tvMicStatusBadge: TextView
     private lateinit var tvMicStatusDesc: TextView
-    private lateinit var btnRequestMicPermission: Button
-    private lateinit var layoutMicRow: View
 
     // Test Playground Views
     private lateinit var etTestInput: EditText
     private lateinit var btnClearTestInput: View
+    private lateinit var btnRunTest: View
     private lateinit var chipSample1: TextView
     private lateinit var chipSample2: TextView
     private lateinit var chipSample3: TextView
+
+    // Guide & Navigation Views
+    private lateinit var btnViewFullGuide: View
+    private lateinit var navTabHome: View
+    private lateinit var navTabHistory: View
+    private lateinit var navTabStyles: View
+    private lateinit var navTabMore: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,30 +62,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initViews() {
+        btnHeaderSettings = findViewById(R.id.btnHeaderSettings)
+
+        layoutAccessibilityRow = findViewById(R.id.layoutAccessibilityRow)
         tvServiceStatusBadge = findViewById(R.id.tvServiceStatusBadge)
         tvServiceStatusDesc = findViewById(R.id.tvServiceStatusDesc)
-        btnOpenAccessibility = findViewById(R.id.btnOpenAccessibility)
-        layoutAccessibilityRow = findViewById(R.id.layoutAccessibilityRow)
 
+        layoutMicRow = findViewById(R.id.layoutMicRow)
         tvMicStatusBadge = findViewById(R.id.tvMicStatusBadge)
         tvMicStatusDesc = findViewById(R.id.tvMicStatusDesc)
-        btnRequestMicPermission = findViewById(R.id.btnRequestMicPermission)
-        layoutMicRow = findViewById(R.id.layoutMicRow)
 
         etTestInput = findViewById(R.id.etTestInput)
         btnClearTestInput = findViewById(R.id.btnClearTestInput)
+        btnRunTest = findViewById(R.id.btnRunTest)
         chipSample1 = findViewById(R.id.chipSample1)
         chipSample2 = findViewById(R.id.chipSample2)
         chipSample3 = findViewById(R.id.chipSample3)
+
+        btnViewFullGuide = findViewById(R.id.btnViewFullGuide)
+        navTabHome = findViewById(R.id.navTabHome)
+        navTabHistory = findViewById(R.id.navTabHistory)
+        navTabStyles = findViewById(R.id.navTabStyles)
+        navTabMore = findViewById(R.id.navTabMore)
     }
 
     private fun setupListeners() {
-        val openAccessibilityAction = View.OnClickListener {
+        // Header Settings
+        btnHeaderSettings.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            openAppSettings()
+        }
+
+        // Accessibility Service Row
+        layoutAccessibilityRow.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val isRunning = isAccessibilityServiceEnabled(this, RewriteAccessibilityService::class.java)
             if (isRunning) {
                 Toast.makeText(
                     this,
-                    "Redirecting to Settings: You can manage Keyflow here.",
+                    "Keyflow is Active: You can manage accessibility in Settings.",
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -87,17 +108,16 @@ class MainActivity : AppCompatActivity() {
             startActivity(intent)
         }
 
-        btnOpenAccessibility.setOnClickListener(openAccessibilityAction)
-        layoutAccessibilityRow.setOnClickListener(openAccessibilityAction)
-
-        val micAction = View.OnClickListener {
+        // Microphone Access Row
+        layoutMicRow.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             val hasMic = ContextCompat.checkSelfPermission(
                 this,
                 android.Manifest.permission.RECORD_AUDIO
             ) == PackageManager.PERMISSION_GRANTED
 
             if (hasMic) {
-                Toast.makeText(this, "Opening App Settings to manage permissions", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Microphone is Ready: Managing permissions in Settings.", Toast.LENGTH_SHORT).show()
                 openAppSettings()
             } else {
                 ActivityCompat.requestPermissions(
@@ -108,24 +128,65 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        btnRequestMicPermission.setOnClickListener(micAction)
-        layoutMicRow.setOnClickListener(micAction)
-
+        // Clear Playground
         btnClearTestInput.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             etTestInput.setText("")
         }
 
+        // Upward Arrow CTA Submit Button
+        btnRunTest.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            val currentText = etTestInput.text.toString().trim()
+            if (currentText.isEmpty()) {
+                insertSampleText("kal meeting kitne baje hai?")
+            } else {
+                etTestInput.requestFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.showSoftInput(etTestInput, InputMethodManager.SHOW_IMPLICIT)
+                Toast.makeText(this, "Tap the Keyflow floating pill to rewrite!", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Quick Samples
         chipSample1.setOnClickListener {
-            insertSampleText("kal meeting kitne baje hai bro?")
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            insertSampleText("kal meeting kitne baje hai?")
         }
 
         chipSample2.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             insertSampleText("please send invoice by eod")
         }
 
         chipSample3.setOnClickListener {
-            insertSampleText("running late will reach in 15m")
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            insertSampleText("rewrite this")
         }
+
+        // Full Guide
+        btnViewFullGuide.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            Toast.makeText(
+                this,
+                "Single Tap: Rewrite | Double Tap: Toggle Voice/Text | Long Press: Tone Menu | Drag: Reposition",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+
+        // Bottom Navigation Tabs
+        navTabHome.setOnClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            findViewById<androidx.core.widget.NestedScrollView>(R.id.scrollViewMain)?.smoothScrollTo(0, 0)
+        }
+
+        val stubTabListener = View.OnClickListener { v ->
+            v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            Toast.makeText(this, "Keyflow v2.0 • Feature coming soon!", Toast.LENGTH_SHORT).show()
+        }
+        navTabHistory.setOnClickListener(stubTabListener)
+        navTabStyles.setOnClickListener(stubTabListener)
+        navTabMore.setOnClickListener(stubTabListener)
     }
 
     private fun insertSampleText(sample: String) {
@@ -134,7 +195,7 @@ class MainActivity : AppCompatActivity() {
         etTestInput.requestFocus()
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.showSoftInput(etTestInput, InputMethodManager.SHOW_IMPLICIT)
-        Toast.makeText(this, "Sample loaded! Tap ✨ on Keyflow pill to rewrite.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Sample loaded! Tap the floating pill to transform.", Toast.LENGTH_SHORT).show()
     }
 
     private fun openAppSettings() {
@@ -161,23 +222,15 @@ class MainActivity : AppCompatActivity() {
         ) == PackageManager.PERMISSION_GRANTED
 
         if (hasMicPermission) {
-            tvMicStatusBadge.text = "READY ✓"
+            tvMicStatusBadge.text = "Ready"
             tvMicStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.status_green))
             tvMicStatusBadge.setBackgroundResource(R.drawable.bg_badge_emerald)
-            tvMicStatusDesc.text = "Whisper voice dictation is ready to use"
-
-            btnRequestMicPermission.text = "Settings"
-            btnRequestMicPermission.setBackgroundResource(R.drawable.bg_btn_secondary)
-            btnRequestMicPermission.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+            tvMicStatusDesc.text = "Needed for voice dictation (Whisper)."
         } else {
-            tvMicStatusBadge.text = "REQUIRED"
+            tvMicStatusBadge.text = "Required"
             tvMicStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.status_amber))
             tvMicStatusBadge.setBackgroundResource(R.drawable.bg_badge_amber)
-            tvMicStatusDesc.text = "Required for voice dictation & Whisper"
-
-            btnRequestMicPermission.text = "Grant"
-            btnRequestMicPermission.setBackgroundResource(R.drawable.bg_btn_cta)
-            btnRequestMicPermission.setTextColor(ContextCompat.getColor(this, R.color.btn_cta_text))
+            tvMicStatusDesc.text = "Needed for voice dictation (Whisper)."
         }
     }
 
@@ -199,23 +252,15 @@ class MainActivity : AppCompatActivity() {
         val isServiceRunning = isAccessibilityServiceEnabled(this, RewriteAccessibilityService::class.java)
 
         if (isServiceRunning) {
-            tvServiceStatusBadge.text = "ACTIVE ✓"
+            tvServiceStatusBadge.text = "Active"
             tvServiceStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.status_green))
             tvServiceStatusBadge.setBackgroundResource(R.drawable.bg_badge_emerald)
-            tvServiceStatusDesc.text = "Keyflow is active & ready above Gboard"
-
-            btnOpenAccessibility.text = "Settings"
-            btnOpenAccessibility.setBackgroundResource(R.drawable.bg_btn_secondary)
-            btnOpenAccessibility.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+            tvServiceStatusDesc.text = "Allows Keyflow to appear above your keyboard."
         } else {
-            tvServiceStatusBadge.text = "REQUIRED"
+            tvServiceStatusBadge.text = "Required"
             tvServiceStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.status_amber))
             tvServiceStatusBadge.setBackgroundResource(R.drawable.bg_badge_amber)
-            tvServiceStatusDesc.text = "Required to dock above keyboard and insert text"
-
-            btnOpenAccessibility.text = "Enable"
-            btnOpenAccessibility.setBackgroundResource(R.drawable.bg_btn_cta)
-            btnOpenAccessibility.setTextColor(ContextCompat.getColor(this, R.color.btn_cta_text))
+            tvServiceStatusDesc.text = "Allows Keyflow to appear above your keyboard."
         }
     }
 

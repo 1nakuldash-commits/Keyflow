@@ -1,308 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_dark_base"
-    android:fillViewport="true"
-    android:overScrollMode="never">
+    android:background="@color/bg_dark_base">
 
-    <LinearLayout
+    <!-- Scrollable Main Content -->
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/scrollViewMain"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingTop="32dp"
-        android:paddingBottom="48dp">
-
-        <!-- ============================================================= -->
-        <!-- Brand Header Section                                          -->
-        <!-- ============================================================= -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <ImageView
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:src="@drawable/ic_keyflow_logo"
-                android:contentDescription="@string/app_name" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="14dp"
-                android:orientation="vertical">
-
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical"
-                    android:background="@drawable/bg_chip_sample"
-                    android:paddingHorizontal="8dp"
-                    android:paddingVertical="3dp">
-
-                    <ImageView
-                        android:layout_width="11dp"
-                        android:layout_height="11dp"
-                        android:src="@drawable/ic_sparkle"
-                        android:contentDescription="AI" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="5dp"
-                        android:text="KEYFLOW • AI ASSISTANT"
-                        android:textSize="9.5sp"
-                        android:letterSpacing="0.08"
-                        android:textAllCaps="true"
-                        android:textColor="@color/text_primary"
-                        android:fontFamily="sans-serif-bold" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Intelligent Assistant"
-                    android:textSize="21sp"
-                    android:textColor="@color/text_primary"
-                    android:fontFamily="sans-serif"
-                    android:textStyle="bold" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="Real-time voice dictation and context-aware AI text enhancement docked directly above your keyboard."
-            android:textSize="13sp"
-            android:textColor="@color/text_secondary"
-            android:lineSpacingExtra="3dp" />
-
-        <!-- ============================================================= -->
-        <!-- System Permissions & Services Control Center                  -->
-        <!-- ============================================================= -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="SYSTEM SERVICES &amp; PERMISSIONS"
-            android:textSize="11sp"
-            android:letterSpacing="0.12"
-            android:textAllCaps="true"
-            android:textColor="@color/text_secondary"
-            android:fontFamily="sans-serif-medium" />
+        android:layout_height="match_parent"
+        android:layout_above="@+id/layoutBottomNav"
+        android:fillViewport="true"
+        android:overScrollMode="never">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
             android:orientation="vertical"
-            android:background="@drawable/bg_card_glass"
-            android:padding="16dp">
+            android:paddingHorizontal="20dp"
+            android:paddingTop="28dp"
+            android:paddingBottom="36dp">
 
-            <!-- Row 1: Accessibility Service -->
-            <LinearLayout
-                android:id="@+id/layoutAccessibilityRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true">
-
-                <FrameLayout
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="@drawable/bg_icon_container">
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:layout_gravity="center"
-                        android:src="@drawable/ic_accessibility"
-                        android:contentDescription="Accessibility" />
-                </FrameLayout>
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="14dp"
-                    android:orientation="vertical">
-
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Accessibility Service"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:fontFamily="sans-serif-medium" />
-
-                        <TextView
-                            android:id="@+id/tvServiceStatusBadge"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:text="ACTIVE ✓"
-                            android:textSize="9.5sp"
-                            android:singleLine="true"
-                            android:maxLines="1"
-                            android:textColor="@color/status_green"
-                            android:background="@drawable/bg_badge_emerald"
-                            android:fontFamily="sans-serif-bold" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/tvServiceStatusDesc"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Keyflow is active &amp; ready above Gboard"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <Button
-                    android:id="@+id/btnOpenAccessibility"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="8dp"
-                    android:minWidth="76dp"
-                    android:paddingHorizontal="14dp"
-                    android:text="Settings"
-                    android:textSize="12sp"
-                    android:textColor="@color/text_primary"
-                    android:background="@drawable/bg_btn_secondary"
-                    android:fontFamily="sans-serif-medium"
-                    android:stateListAnimator="@null" />
-            </LinearLayout>
-
-            <!-- Hairline Divider -->
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="14dp"
-                android:background="@color/border_subtle" />
-
-            <!-- Row 2: Microphone Access -->
-            <LinearLayout
-                android:id="@+id/layoutMicRow"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:clickable="true"
-                android:focusable="true">
-
-                <FrameLayout
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="@drawable/bg_icon_container">
-
-                    <ImageView
-                        android:layout_width="20dp"
-                        android:layout_height="20dp"
-                        android:layout_gravity="center"
-                        android:src="@drawable/ic_mic"
-                        android:contentDescription="Microphone" />
-                </FrameLayout>
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="14dp"
-                    android:orientation="vertical">
-
-                    <LinearLayout
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal"
-                        android:gravity="center_vertical">
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="Microphone Access"
-                            android:textColor="@color/text_primary"
-                            android:textSize="14sp"
-                            android:fontFamily="sans-serif-medium" />
-
-                        <TextView
-                            android:id="@+id/tvMicStatusBadge"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginStart="8dp"
-                            android:text="READY ✓"
-                            android:textSize="9.5sp"
-                            android:singleLine="true"
-                            android:maxLines="1"
-                            android:textColor="@color/status_green"
-                            android:background="@drawable/bg_badge_emerald"
-                            android:fontFamily="sans-serif-bold" />
-                    </LinearLayout>
-
-                    <TextView
-                        android:id="@+id/tvMicStatusDesc"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Whisper voice dictation is ready to use"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <Button
-                    android:id="@+id/btnRequestMicPermission"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:layout_marginStart="8dp"
-                    android:minWidth="76dp"
-                    android:paddingHorizontal="14dp"
-                    android:text="Settings"
-                    android:textSize="12sp"
-                    android:textColor="@color/text_primary"
-                    android:background="@drawable/bg_btn_secondary"
-                    android:fontFamily="sans-serif-medium"
-                    android:stateListAnimator="@null" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- ============================================================= -->
-        <!-- Interactive Testing Playground                                -->
-        <!-- ============================================================= -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
-            android:text="INTERACTIVE TEST PLAYGROUND"
-            android:textSize="11sp"
-            android:letterSpacing="0.12"
-            android:textAllCaps="true"
-            android:textColor="@color/text_secondary"
-            android:fontFamily="sans-serif-medium" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="vertical"
-            android:background="@drawable/bg_card_glass"
-            android:padding="16dp">
-
+            <!-- ============================================================= -->
+            <!-- 1. Brand Header: Logo + Title + Settings Pill                 -->
+            <!-- ============================================================= -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -310,60 +31,478 @@
                 android:gravity="center_vertical">
 
                 <ImageView
-                    android:layout_width="14dp"
-                    android:layout_height="14dp"
-                    android:src="@drawable/ic_sparkle"
-                    android:contentDescription="Playground" />
+                    android:layout_width="42dp"
+                    android:layout_height="42dp"
+                    android:src="@drawable/ic_keyflow_logo"
+                    android:contentDescription="@string/app_name" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Keyflow"
+                        android:textSize="20sp"
+                        android:textColor="@color/text_primary"
+                        android:fontFamily="sans-serif-bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:text="AI ASSISTANT"
+                        android:textSize="10sp"
+                        android:letterSpacing="0.14"
+                        android:textAllCaps="true"
+                        android:textColor="@color/text_secondary"
+                        android:fontFamily="sans-serif-medium" />
+                </LinearLayout>
+
+                <!-- Settings Header Pill Button -->
+                <LinearLayout
+                    android:id="@+id/btnHeaderSettings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:background="@drawable/bg_settings_pill"
+                    android:paddingHorizontal="14dp"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="15dp"
+                        android:layout_height="15dp"
+                        android:src="@drawable/ic_settings"
+                        android:contentDescription="Settings" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="7dp"
+                        android:text="Settings"
+                        android:textSize="13sp"
+                        android:textColor="@color/text_primary"
+                        android:fontFamily="sans-serif-medium" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- ============================================================= -->
+            <!-- 2. Hero Section: Headline + Floating Wave/Sparkle Widget      -->
+            <!-- ============================================================= -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="26dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1.1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Your words,\nbut better."
+                        android:textSize="28sp"
+                        android:textColor="@color/text_primary"
+                        android:fontFamily="sans-serif-bold"
+                        android:lineSpacingMultiplier="1.08" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Real-time voice dictation and context-aware AI text enhancement, right above your keyboard."
+                        android:textSize="12.5sp"
+                        android:textColor="@color/text_secondary"
+                        android:lineSpacingExtra="3.5dp" />
+                </LinearLayout>
+
+                <!-- Floating Preview Widget (Waveform + AI Sparkle) -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="14dp"
+                    android:orientation="vertical"
+                    android:gravity="center_horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Type less\nDo more ↗"
+                        android:textSize="9.5sp"
+                        android:textColor="@color/text_tertiary"
+                        android:fontFamily="sans-serif-medium"
+                        android:textAlignment="center"
+                        android:layout_marginBottom="4dp" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:background="@drawable/bg_hero_preview_card"
+                        android:paddingHorizontal="12dp"
+                        android:paddingVertical="10dp">
+
+                        <!-- Mini Waveform Graphic -->
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="22dp"
+                            android:orientation="horizontal"
+                            android:gravity="center">
+
+                            <View
+                                android:layout_width="2.5dp"
+                                android:layout_height="8dp"
+                                android:layout_marginHorizontal="1.5dp"
+                                android:background="#38BDF8" />
+                            <View
+                                android:layout_width="2.5dp"
+                                android:layout_height="14dp"
+                                android:layout_marginHorizontal="1.5dp"
+                                android:background="#38BDF8" />
+                            <View
+                                android:layout_width="2.5dp"
+                                android:layout_height="20dp"
+                                android:layout_marginHorizontal="1.5dp"
+                                android:background="#2563EB" />
+                            <View
+                                android:layout_width="2.5dp"
+                                android:layout_height="16dp"
+                                android:layout_marginHorizontal="1.5dp"
+                                android:background="#38BDF8" />
+                            <View
+                                android:layout_width="2.5dp"
+                                android:layout_height="10dp"
+                                android:layout_marginHorizontal="1.5dp"
+                                android:background="#38BDF8" />
+                        </LinearLayout>
+
+                        <!-- Sparkle Pill Container -->
+                        <FrameLayout
+                            android:layout_width="28dp"
+                            android:layout_height="28dp"
+                            android:layout_marginStart="10dp"
+                            android:background="@drawable/bg_squircle_tap">
+
+                            <ImageView
+                                android:layout_width="14dp"
+                                android:layout_height="14dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_sparkle"
+                                android:contentDescription="AI" />
+                        </FrameLayout>
+
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- ============================================================= -->
+            <!-- 3. System Permissions Section                                 -->
+            <!-- ============================================================= -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:text="SYSTEM PERMISSIONS"
+                android:textSize="11sp"
+                android:letterSpacing="0.12"
+                android:textAllCaps="true"
+                android:textColor="@color/text_secondary"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Enable the required permissions to use Keyflow."
+                android:textSize="12sp"
+                android:textColor="@color/text_tertiary" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card_glass"
+                android:padding="16dp">
+
+                <!-- Row 1: Accessibility Service -->
+                <LinearLayout
+                    android:id="@+id/layoutAccessibilityRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <FrameLayout
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="@drawable/bg_icon_container">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_accessibility"
+                            android:contentDescription="Accessibility" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Accessibility Service"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14.5sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:id="@+id/tvServiceStatusDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Allows Keyflow to appear above your keyboard."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <!-- Status Pill & Chevron Indicator -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginStart="8dp">
+
+                        <TextView
+                            android:id="@+id/tvServiceStatusBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Active"
+                            android:textSize="11sp"
+                            android:singleLine="true"
+                            android:maxLines="1"
+                            android:textColor="@color/status_green"
+                            android:background="@drawable/bg_badge_emerald"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <ImageView
+                            android:layout_width="16dp"
+                            android:layout_height="16dp"
+                            android:layout_marginStart="6dp"
+                            android:src="@drawable/ic_chevron_right"
+                            android:contentDescription="Chevron" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Hairline Divider -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="14dp"
+                    android:background="@color/border_subtle" />
+
+                <!-- Row 2: Microphone Access -->
+                <LinearLayout
+                    android:id="@+id/layoutMicRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <FrameLayout
+                        android:layout_width="40dp"
+                        android:layout_height="40dp"
+                        android:background="@drawable/bg_icon_container">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_mic"
+                            android:contentDescription="Microphone" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Microphone Access"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14.5sp"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <TextView
+                            android:id="@+id/tvMicStatusDesc"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Needed for voice dictation (Whisper)."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <!-- Status Pill & Chevron Indicator -->
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginStart="8dp">
+
+                        <TextView
+                            android:id="@+id/tvMicStatusBadge"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Ready"
+                            android:textSize="11sp"
+                            android:singleLine="true"
+                            android:maxLines="1"
+                            android:textColor="@color/status_green"
+                            android:background="@drawable/bg_badge_emerald"
+                            android:fontFamily="sans-serif-medium" />
+
+                        <ImageView
+                            android:layout_width="16dp"
+                            android:layout_height="16dp"
+                            android:layout_marginStart="6dp"
+                            android:src="@drawable/ic_chevron_right"
+                            android:contentDescription="Chevron" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- ============================================================= -->
+            <!-- 4. Interactive Test Playground: TRY IT OUT                    -->
+            <!-- ============================================================= -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:text="Tap below to summon Keyflow above keyboard:"
+                    android:text="TRY IT OUT"
+                    android:textSize="11sp"
+                    android:letterSpacing="0.12"
+                    android:textAllCaps="true"
                     android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    android:fontFamily="sans-serif-medium" />
 
                 <TextView
                     android:id="@+id/btnClearTestInput"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Clear"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium"
+                    android:textSize="12sp"
+                    android:textColor="#3B82F6"
+                    android:fontFamily="sans-serif-bold"
+                    android:paddingHorizontal="4dp"
+                    android:paddingVertical="2dp"
                     android:clickable="true"
                     android:focusable="true" />
             </LinearLayout>
 
-            <EditText
-                android:id="@+id/etTestInput"
-                android:layout_width="match_parent"
-                android:layout_height="80dp"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card_nested"
-                android:padding="12dp"
-                android:gravity="top|start"
-                android:hint="Type or paste rough Hinglish/English here (e.g. 'kal meeting kitne baje hai bro?')..."
-                android:textColorHint="@color/text_secondary"
-                android:textColor="@color/text_primary"
-                android:textSize="13.5sp"
-                android:inputType="textMultiLine" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Type or paste your Hinglish / English here."
+                android:textSize="12sp"
+                android:textColor="@color/text_tertiary" />
 
-            <!-- Sample test prompt suggestion chips -->
+            <!-- Input Box with Circular Blue Upward Arrow Button -->
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_input_box"
+                android:padding="14dp">
+
+                <EditText
+                    android:id="@+id/etTestInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="68dp"
+                    android:gravity="top|start"
+                    android:background="@null"
+                    android:hint='e.g. "kal meeting kitne baje hai?"'
+                    android:textColor="@color/text_primary"
+                    android:textColorHint="#525D73"
+                    android:textSize="14sp"
+                    android:lineSpacingExtra="2dp"
+                    android:paddingEnd="46dp"
+                    android:inputType="textMultiLine|textCapSentences" />
+
+                <!-- Upward Arrow Blue Submit Button -->
+                <FrameLayout
+                    android:id="@+id/btnRunTest"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_alignParentEnd="true"
+                    android:layout_alignParentBottom="true"
+                    android:background="@drawable/bg_btn_circle_cta"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <ImageView
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_arrow_up"
+                        android:contentDescription="Submit" />
+                </FrameLayout>
+            </RelativeLayout>
+
+            <!-- Quick Samples Header & Horizontal Chips -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:text="Quick Samples (Tap to insert &amp; test):"
-                android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:text="Quick samples"
+                android:textSize="11sp"
+                android:textColor="@color/text_tertiary" />
 
             <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:scrollbars="none">
+                android:scrollbars="none"
+                android:overScrollMode="never">
 
                 <LinearLayout
                     android:layout_width="wrap_content"
@@ -374,10 +513,10 @@
                         android:id="@+id/chipSample1"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:text="“kal meeting kitne baje hai?”"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
                         android:background="@drawable/bg_chip_sample"
-                        android:text="&quot;kal meeting kitne baje hai?&quot;"
-                        android:textColor="@color/text_primary"
-                        android:textSize="11sp"
                         android:clickable="true"
                         android:focusable="true" />
 
@@ -386,10 +525,10 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:text="“please send invoice by eod”"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
                         android:background="@drawable/bg_chip_sample"
-                        android:text="&quot;please send invoice by eod&quot;"
-                        android:textColor="@color/text_primary"
-                        android:textSize="11sp"
                         android:clickable="true"
                         android:focusable="true" />
 
@@ -398,164 +537,384 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
+                        android:text="“rewrite this”"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
                         android:background="@drawable/bg_chip_sample"
-                        android:text="&quot;running late will reach in 15m&quot;"
-                        android:textColor="@color/text_primary"
-                        android:textSize="11sp"
                         android:clickable="true"
                         android:focusable="true" />
                 </LinearLayout>
             </HorizontalScrollView>
+
+            <!-- ============================================================= -->
+            <!-- 5. HOW TO USE Guide Section                                   -->
+            <!-- ============================================================= -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="HOW TO USE"
+                    android:textSize="11sp"
+                    android:letterSpacing="0.12"
+                    android:textAllCaps="true"
+                    android:textColor="@color/text_secondary"
+                    android:fontFamily="sans-serif-medium" />
+
+                <TextView
+                    android:id="@+id/btnViewFullGuide"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="View full guide &gt;"
+                    android:textSize="12sp"
+                    android:textColor="#3B82F6"
+                    android:fontFamily="sans-serif-bold"
+                    android:paddingHorizontal="4dp"
+                    android:paddingVertical="2dp"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card_glass"
+                android:padding="16dp">
+
+                <!-- Single Tap -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <FrameLayout
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:background="@drawable/bg_squircle_tap">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_gesture_tap"
+                            android:contentDescription="Single Tap" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Single Tap"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:fontFamily="sans-serif-bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Refine or rewrite text instantly."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Divider -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="12dp"
+                    android:background="@color/border_subtle" />
+
+                <!-- Double Tap -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <FrameLayout
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:background="@drawable/bg_squircle_switch">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_gesture_double_tap"
+                            android:contentDescription="Double Tap" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Double Tap"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:fontFamily="sans-serif-bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Switch between Voice-to-Text and Text-to-Text."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Divider -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="12dp"
+                    android:background="@color/border_subtle" />
+
+                <!-- Long Press -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <FrameLayout
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:background="@drawable/bg_squircle_menu">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_gesture_long_press"
+                            android:contentDescription="Long Press" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Long Press"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:fontFamily="sans-serif-bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Open Tone Selector (Raw, Normal, Professional)."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Divider -->
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginVertical="12dp"
+                    android:background="@color/border_subtle" />
+
+                <!-- Drag & Snap -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <FrameLayout
+                        android:layout_width="38dp"
+                        android:layout_height="38dp"
+                        android:background="@drawable/bg_squircle_drag">
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_gesture_drag"
+                            android:contentDescription="Drag &amp; Snap" />
+                    </FrameLayout>
+
+                    <LinearLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="14dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Drag &amp; Snap"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:fontFamily="sans-serif-bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="Reposition freely. Keyflow docks above your keyboard."
+                            android:textColor="@color/text_secondary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <!-- ================================================================= -->
+    <!-- 6. Bottom Navigation Bar                                          -->
+    <!-- ================================================================= -->
+    <LinearLayout
+        android:id="@+id/layoutBottomNav"
+        android:layout_width="match_parent"
+        android:layout_height="58dp"
+        android:layout_alignParentBottom="true"
+        android:background="#0B0D14"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <!-- Tab: Home -->
+        <LinearLayout
+            android:id="@+id/navTabHome"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_nav_home"
+                android:contentDescription="Home" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Home"
+                android:textSize="10.5sp"
+                android:textColor="#2563EB"
+                android:fontFamily="sans-serif-bold" />
         </LinearLayout>
 
-        <!-- ============================================================= -->
-        <!-- How to Use Keyflow / Gestures Guide Section                   -->
-        <!-- ============================================================= -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
-            android:text="GESTURES &amp; USAGE GUIDE"
-            android:textSize="11sp"
-            android:letterSpacing="0.12"
-            android:textAllCaps="true"
-            android:textColor="@color/text_secondary"
-            android:fontFamily="sans-serif-medium" />
-
+        <!-- Tab: History -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:id="@+id/navTabHistory"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
             android:orientation="vertical"
-            android:background="@drawable/bg_card_glass"
-            android:padding="16dp">
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
 
-            <!-- Guide Item 1: Voice Dictation -->
-            <LinearLayout
-                android:layout_width="match_parent"
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_nav_history"
+                android:contentDescription="History" />
+
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:layout_marginTop="2dp"
+                android:text="History"
+                android:textSize="10.5sp"
+                android:textColor="#64748B"
+                android:fontFamily="sans-serif-medium" />
+        </LinearLayout>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_chip_sample"
-                    android:text="Single Tap"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium" />
+        <!-- Tab: Styles -->
+        <LinearLayout
+            android:id="@+id/navTabStyles"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:text="Refine or rewrite text instantly in text mode, or speak in voice mode."
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:lineSpacingExtra="2dp" />
-            </LinearLayout>
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_nav_styles"
+                android:contentDescription="Styles" />
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="12dp"
-                android:background="@color/border_subtle" />
-
-            <!-- Guide Item 2: Mode Switch Flip -->
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
+                android:layout_marginTop="2dp"
+                android:text="Styles"
+                android:textSize="10.5sp"
+                android:textColor="#64748B"
+                android:fontFamily="sans-serif-medium" />
+        </LinearLayout>
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_chip_sample"
-                    android:text="Double Tap"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium" />
+        <!-- Tab: More -->
+        <LinearLayout
+            android:id="@+id/navTabMore"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:clickable="true"
+            android:focusable="true">
 
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:text="Smooth 3D flip card toggle between Voice-to-Text and Text-to-Text modes."
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:lineSpacingExtra="2dp" />
-            </LinearLayout>
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:src="@drawable/ic_nav_more"
+                android:contentDescription="More" />
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="12dp"
-                android:background="@color/border_subtle" />
-
-            <!-- Guide Item 3: Tone Selector -->
-            <LinearLayout
-                android:layout_width="match_parent"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_chip_sample"
-                    android:text="Long Press"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium" />
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:text="Summon the Tone Selector to choose Raw, Normal, or Professional style."
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:lineSpacingExtra="2dp" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="12dp"
-                android:background="@color/border_subtle" />
-
-            <!-- Guide Item 4: Magnetic Dragging -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_chip_sample"
-                    android:text="Drag &amp; Snap"
-                    android:textColor="@color/text_primary"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium" />
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:text="Press and drag to reposition. Keyflow magnetically docks above your keyboard."
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp"
-                    android:lineSpacingExtra="2dp" />
-            </LinearLayout>
+                android:layout_marginTop="2dp"
+                android:text="More"
+                android:textSize="10.5sp"
+                android:textColor="#64748B"
+                android:fontFamily="sans-serif-medium" />
         </LinearLayout>
 
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+
+</RelativeLayout>

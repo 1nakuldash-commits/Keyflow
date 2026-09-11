@@ -46,7 +46,7 @@
             android:layout_gravity="center"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingHorizontal="6dp"
+            android:paddingHorizontal="10dp"
             android:visibility="gone">
 
             <!-- Cancel Button (X) -->
@@ -54,6 +54,7 @@
                 android:id="@+id/btnCancelVoice"
                 android:layout_width="28dp"
                 android:layout_height="28dp"
+                android:layout_marginStart="2dp"
                 android:background="@drawable/bg_voice_cancel_btn"
                 android:clickable="true"
                 android:focusable="false">
@@ -160,6 +161,7 @@
                 android:id="@+id/btnDoneVoice"
                 android:layout_width="28dp"
                 android:layout_height="28dp"
+                android:layout_marginEnd="2dp"
                 android:background="@drawable/bg_voice_done_btn"
                 android:clickable="true"
                 android:focusable="false">

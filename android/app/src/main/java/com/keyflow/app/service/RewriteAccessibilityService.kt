@@ -96,7 +96,7 @@ class RewriteAccessibilityService : AccessibilityService() {
             internal set
 
         private const val BADGE_SIZE_DP = 44
-        private const val CAPSULE_EXPANDED_WIDTH_DP = 156
+        private const val CAPSULE_EXPANDED_WIDTH_DP = 172
         private const val ROOT_PADDING_DP = 8
         private const val BADGE_MARGIN_EDGE_DP = 10 // Clean 10dp margin for both pill and popup menu
         private const val BADGE_GAP_ABOVE_KEYBOARD_DP = 8
@@ -1202,8 +1202,8 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Visualizer polling runnable: polls mediaRecorder maxAmplitude every 40ms,
-     * driving the organic living wave bars inspired by Whisper Flow.
+     * Visualizer polling runnable: polls mediaRecorder maxAmplitude every 30ms,
+     * driving the organic living wave bars with dual-rate smoothing.
      */
     private val visualizerRunnable = object : Runnable {
         override fun run() {
@@ -1215,11 +1215,15 @@ class RewriteAccessibilityService : AccessibilityService() {
                 0
             }
 
-            // Exponential Moving Average filter
-            smoothedAmplitude = smoothedAmplitude * 0.40f + rawAmp * 0.60f
-            updateLivingWaveBars(livingWavePhase, smoothedAmplitude)
+            // Asymmetrical dual-rate smoothing: quick responsive rise, smooth gentle decay
+            val targetAmp = rawAmp.toFloat()
+            if (targetAmp > smoothedAmplitude) {
+                smoothedAmplitude = smoothedAmplitude * 0.65f + targetAmp * 0.35f
+            } else {
+                smoothedAmplitude = smoothedAmplitude * 0.88f + targetAmp * 0.12f
+            }
 
-            mainHandler.postDelayed(this, 40L)
+            mainHandler.postDelayed(this, 30L)
         }
     }
 
@@ -1227,7 +1231,7 @@ class RewriteAccessibilityService : AccessibilityService() {
         if (livingWavePhaseAnimator?.isRunning == true) return
         livingWavePhaseAnimator?.cancel()
         livingWavePhaseAnimator = ValueAnimator.ofFloat(0f, (2 * Math.PI).toFloat()).apply {
-            duration = 1300L
+            duration = 1600L
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.RESTART
             interpolator = android.view.animation.LinearInterpolator()
@@ -1248,7 +1252,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     }
 
     private fun updateLivingWaveBars(phase: Float, amp: Float) {
-        val normalized = ((amp - 1000f) / 16000f).coerceIn(0f, 1f)
+        val normalized = ((amp - 800f) / 15000f).coerceIn(0f, 1f)
         for (i in 0 until 11) {
             val bar = waveBars[i] ?: continue
             val centerDist = kotlin.math.abs(i - 5) / 5.5f
@@ -1261,8 +1265,10 @@ class RewriteAccessibilityService : AccessibilityService() {
             // Live mic amplitude boost
             val voiceScale = normalized * (1.2f + 1.2f * bellWeight)
 
-            val totalScale = (restingScale + voiceScale).coerceIn(0.25f, 2.3f)
-            bar.scaleY = totalScale
+            val targetScale = (restingScale + voiceScale).coerceIn(0.25f, 2.3f)
+            // Liquid-smooth per-frame inertia dampening
+            val currentScale = if (bar.scaleY > 0.05f) bar.scaleY else 0.4f
+            bar.scaleY = currentScale * 0.65f + targetScale * 0.35f
         }
     }
 
@@ -2191,11 +2197,11 @@ class RewriteAccessibilityService : AccessibilityService() {
         fun styleChip(chip: TextView, isActive: Boolean) {
             if (isActive) {
                 chip.setBackgroundResource(R.drawable.bg_tone_chip_active)
-                chip.setTextColor(Color.BLACK)
+                chip.setTextColor(Color.WHITE)
                 chip.setTypeface(null, Typeface.BOLD)
             } else {
                 chip.setBackgroundResource(R.drawable.bg_tone_chip_inactive)
-                chip.setTextColor(Color.parseColor("#A1A1AA"))
+                chip.setTextColor(Color.parseColor("#94A3B8"))
                 chip.setTypeface(null, Typeface.NORMAL)
             }
         }
