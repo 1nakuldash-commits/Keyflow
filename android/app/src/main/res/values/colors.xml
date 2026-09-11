@@ -1,49 +1,51 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark Theme Backgrounds & Surfaces -->
-    <color name="bg_dark_base">#080A10</color>
-    <color name="bg_card_surface">#121622</color>
-    <color name="bg_card_surface_elevated">#181D2D</color>
-    <color name="bg_card_surface_subtle">#0F121C</color>
-    <color name="border_subtle">#1E2436</color>
-    <color name="border_focused">#38BDF8</color>
-    <color name="border_glass">#25304B</color>
+    <!-- Dark Theme Backgrounds & Surfaces (Apple/Linear Minimal) -->
+    <color name="bg_dark_base">#090A0F</color>
+    <color name="bg_card_surface">#11131A</color>
+    <color name="bg_card_surface_elevated">#161922</color>
+    <color name="bg_card_surface_subtle">#0B0C12</color>
+    <color name="border_subtle">#1F2330</color>
+    <color name="border_focused">#FFFFFF</color>
+    <color name="border_glass">#262B3B</color>
 
     <!-- Legacy Glass surfaces -->
-    <color name="glass_surface">#E612141A</color>
-    <color name="glass_border">#33FFFFFF</color>
-    <color name="glass_surface_elevated">#F21A1D24</color>
+    <color name="glass_surface">#F211131A</color>
+    <color name="glass_border">#1AFFFFFF</color>
+    <color name="glass_surface_elevated">#F2161922</color>
 
     <!-- Brand & Accent Colors -->
-    <color name="accent_primary">#8B5CF6</color>
-    <color name="accent_primary_dark">#7C3AED</color>
-    <color name="accent_pill">#252033</color>
-    <color name="accent_pill_border">#5C4880</color>
-    <color name="accent_cyan">#38BDF8</color>
-    <color name="accent_cyan_glow">#2238BDF8</color>
-    <color name="accent_violet_glow">#228B5CF6</color>
+    <color name="accent_primary">#FFFFFF</color>
+    <color name="accent_primary_dark">#E2E8F0</color>
+    <color name="accent_pill">#141620</color>
+    <color name="accent_pill_border">#2C3246</color>
+    <color name="accent_cyan">#E2E8F0</color>
+    <color name="accent_cyan_glow">#15FFFFFF</color>
+    <color name="accent_violet_glow">#15FFFFFF</color>
 
     <!-- Button states -->
-    <color name="button_bg">#1B2030</color>
-    <color name="button_bg_pressed">#283048</color>
-    <color name="button_stroke">#2B354F</color>
+    <color name="button_bg">#181B25</color>
+    <color name="button_bg_pressed">#242938</color>
+    <color name="button_stroke">#282E40</color>
+    <color name="btn_cta_bg">#FFFFFF</color>
+    <color name="btn_cta_text">#000000</color>
 
-    <!-- Status & Notification Badges -->
-    <color name="status_green">#10B981</color>
-    <color name="status_green_bg">#132B24</color>
-    <color name="status_green_border">#23634C</color>
-    <color name="status_gray">#64748B</color>
-    <color name="status_gray_bg">#1A202C</color>
-    <color name="status_amber">#F59E0B</color>
-    <color name="status_amber_bg">#2E2211</color>
-    <color name="status_amber_border">#694715</color>
-    <color name="status_red">#EF4444</color>
+    <!-- Status & Notification Badges (Crisp, High Contrast) -->
+    <color name="status_green">#34D399</color>
+    <color name="status_green_bg">#11251E</color>
+    <color name="status_green_border">#1D4D3D</color>
+    <color name="status_gray">#71717A</color>
+    <color name="status_gray_bg">#181920</color>
+    <color name="status_amber">#FBBF24</color>
+    <color name="status_amber_bg">#252014</color>
+    <color name="status_amber_border">#4E3C1B</color>
+    <color name="status_red">#F87171</color>
 
     <!-- Typography -->
     <color name="text_primary">#F8FAFC</color>
     <color name="text_secondary">#94A3B8</color>
     <color name="text_tertiary">#64748B</color>
-    <color name="text_brand">#C4B5FD</color>
+    <color name="text_brand">#E2E8F0</color>
 
     <!-- Standard Colors -->
     <color name="black">#FF000000</color>

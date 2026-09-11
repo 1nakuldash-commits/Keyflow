@@ -12,8 +12,8 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingHorizontal="20dp"
-        android:paddingTop="28dp"
-        android:paddingBottom="40dp">
+        android:paddingTop="32dp"
+        android:paddingBottom="48dp">
 
         <!-- ============================================================= -->
         <!-- Brand Header Section                                          -->
@@ -47,8 +47,8 @@
                     android:paddingVertical="3dp">
 
                     <ImageView
-                        android:layout_width="12dp"
-                        android:layout_height="12dp"
+                        android:layout_width="11dp"
+                        android:layout_height="11dp"
                         android:src="@drawable/ic_sparkle"
                         android:contentDescription="AI" />
 
@@ -56,11 +56,11 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="5dp"
-                        android:text="KEYFLOW v3.0 • ON-DEVICE AI"
-                        android:textSize="10sp"
-                        android:letterSpacing="0.1"
+                        android:text="KEYFLOW • AI ASSISTANT"
+                        android:textSize="9.5sp"
+                        android:letterSpacing="0.08"
                         android:textAllCaps="true"
-                        android:textColor="@color/accent_cyan"
+                        android:textColor="@color/text_primary"
                         android:fontFamily="sans-serif-bold" />
                 </LinearLayout>
 
@@ -69,7 +69,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginTop="4dp"
                     android:text="Intelligent Assistant"
-                    android:textSize="20sp"
+                    android:textSize="21sp"
                     android:textColor="@color/text_primary"
                     android:fontFamily="sans-serif"
                     android:textStyle="bold" />
@@ -80,7 +80,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="Real-time voice dictation &amp; context-aware AI text enhancement docked directly above your keyboard."
+            android:text="Real-time voice dictation and context-aware AI text enhancement docked directly above your keyboard."
             android:textSize="13sp"
             android:textColor="@color/text_secondary"
             android:lineSpacingExtra="3dp" />
@@ -91,7 +91,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
+            android:layout_marginTop="28dp"
             android:text="SYSTEM SERVICES &amp; PERMISSIONS"
             android:textSize="11sp"
             android:letterSpacing="0.12"
@@ -123,8 +123,8 @@
                     android:background="@drawable/bg_icon_container">
 
                     <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:layout_gravity="center"
                         android:src="@drawable/ic_accessibility"
                         android:contentDescription="Accessibility" />
@@ -156,10 +156,12 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
-                            android:text="CHECKING..."
-                            android:textSize="10sp"
-                            android:textColor="@color/status_gray"
-                            android:background="@drawable/bg_badge_amber"
+                            android:text="ACTIVE ✓"
+                            android:textSize="9.5sp"
+                            android:singleLine="true"
+                            android:maxLines="1"
+                            android:textColor="@color/status_green"
+                            android:background="@drawable/bg_badge_emerald"
                             android:fontFamily="sans-serif-bold" />
                     </LinearLayout>
 
@@ -168,7 +170,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Required to dock above keyboard and insert text"
+                        android:text="Keyflow is active &amp; ready above Gboard"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -176,15 +178,16 @@
                 <Button
                     android:id="@+id/btnOpenAccessibility"
                     android:layout_width="wrap_content"
-                    android:layout_height="38dp"
+                    android:layout_height="36dp"
                     android:layout_marginStart="8dp"
-                    android:text="Enable"
+                    android:minWidth="76dp"
+                    android:paddingHorizontal="14dp"
+                    android:text="Settings"
                     android:textSize="12sp"
-                    android:textColor="@color/white"
-                    android:backgroundTint="@color/accent_primary"
+                    android:textColor="@color/text_primary"
+                    android:background="@drawable/bg_btn_secondary"
                     android:fontFamily="sans-serif-medium"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp" />
+                    android:stateListAnimator="@null" />
             </LinearLayout>
 
             <!-- Hairline Divider -->
@@ -210,8 +213,8 @@
                     android:background="@drawable/bg_icon_container">
 
                     <ImageView
-                        android:layout_width="22dp"
-                        android:layout_height="22dp"
+                        android:layout_width="20dp"
+                        android:layout_height="20dp"
                         android:layout_gravity="center"
                         android:src="@drawable/ic_mic"
                         android:contentDescription="Microphone" />
@@ -243,10 +246,12 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginStart="8dp"
-                            android:text="REQUIRED"
-                            android:textSize="10sp"
-                            android:textColor="@color/status_amber"
-                            android:background="@drawable/bg_badge_amber"
+                            android:text="READY ✓"
+                            android:textSize="9.5sp"
+                            android:singleLine="true"
+                            android:maxLines="1"
+                            android:textColor="@color/status_green"
+                            android:background="@drawable/bg_badge_emerald"
                             android:fontFamily="sans-serif-bold" />
                     </LinearLayout>
 
@@ -255,7 +260,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="2dp"
-                        android:text="Required for on-device voice recording &amp; Whisper"
+                        android:text="Whisper voice dictation is ready to use"
                         android:textColor="@color/text_secondary"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -263,134 +268,16 @@
                 <Button
                     android:id="@+id/btnRequestMicPermission"
                     android:layout_width="wrap_content"
-                    android:layout_height="38dp"
-                    android:layout_marginStart="8dp"
-                    android:text="Grant"
-                    android:textSize="12sp"
-                    android:textColor="@color/text_primary"
-                    android:backgroundTint="@color/button_bg"
-                    android:fontFamily="sans-serif-medium"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- ============================================================= -->
-        <!-- Backend Server Settings                                       -->
-        <!-- ============================================================= -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="26dp"
-            android:text="AI ENGINE &amp; BACKEND SERVER"
-            android:textSize="11sp"
-            android:letterSpacing="0.12"
-            android:textAllCaps="true"
-            android:textColor="@color/text_secondary"
-            android:fontFamily="sans-serif-medium" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:orientation="vertical"
-            android:background="@drawable/bg_card_glass"
-            android:padding="16dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <ImageView
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:src="@drawable/ic_server"
-                    android:contentDescription="Server" />
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:text="Rewrite &amp; Transcribe Endpoint:"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
-
-                <TextView
-                    android:id="@+id/tvBackendStatus"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Not tested"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium" />
-            </LinearLayout>
-
-            <EditText
-                android:id="@+id/etBackendUrl"
-                android:layout_width="match_parent"
-                android:layout_height="44dp"
-                android:layout_marginTop="10dp"
-                android:background="@drawable/bg_card_nested"
-                android:paddingHorizontal="12dp"
-                android:textColor="@color/text_primary"
-                android:textColorHint="@color/text_secondary"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif"
-                android:inputType="textUri"
-                android:singleLine="true" />
-
-            <!-- Preset chips & test button -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:id="@+id/chipPresetLocal"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_chip_sample"
-                    android:text="Local Wi-Fi"
-                    android:textColor="@color/accent_cyan"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium"
-                    android:clickable="true"
-                    android:focusable="true" />
-
-                <TextView
-                    android:id="@+id/chipPresetVercel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_chip_sample"
-                    android:text="Cloud (Vercel)"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="11sp"
-                    android:fontFamily="sans-serif-medium"
-                    android:clickable="true"
-                    android:focusable="true" />
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1" />
-
-                <Button
-                    android:id="@+id/btnTestBackend"
-                    android:layout_width="wrap_content"
                     android:layout_height="36dp"
-                    android:text="Test &amp; Save"
+                    android:layout_marginStart="8dp"
+                    android:minWidth="76dp"
+                    android:paddingHorizontal="14dp"
+                    android:text="Settings"
                     android:textSize="12sp"
                     android:textColor="@color/text_primary"
-                    android:backgroundTint="@color/button_bg"
+                    android:background="@drawable/bg_btn_secondary"
                     android:fontFamily="sans-serif-medium"
-                    android:insetTop="0dp"
-                    android:insetBottom="0dp" />
+                    android:stateListAnimator="@null" />
             </LinearLayout>
         </LinearLayout>
 
@@ -423,8 +310,8 @@
                 android:gravity="center_vertical">
 
                 <ImageView
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
                     android:src="@drawable/ic_sparkle"
                     android:contentDescription="Playground" />
 
@@ -442,7 +329,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Clear"
-                    android:textColor="@color/accent_cyan"
+                    android:textColor="@color/text_primary"
                     android:textSize="11sp"
                     android:fontFamily="sans-serif-medium"
                     android:clickable="true"
@@ -548,38 +435,26 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="top">
+                android:gravity="center_vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🎙️"
-                    android:textSize="16sp" />
+                    android:background="@drawable/bg_chip_sample"
+                    android:text="Single Tap"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium" />
 
-                <LinearLayout
+                <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="12dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Voice-to-Text (Single Tap)"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp"
-                        android:fontFamily="sans-serif-medium" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Tap the pill once to expand the live soundwave capsule. Speak naturally, then tap the checkmark to transcribe and insert."
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:lineSpacingExtra="2dp" />
-                </LinearLayout>
+                    android:text="Refine or rewrite text instantly in text mode, or speak in voice mode."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="2dp" />
             </LinearLayout>
 
             <View
@@ -588,43 +463,31 @@
                 android:layout_marginVertical="12dp"
                 android:background="@color/border_subtle" />
 
-            <!-- Guide Item 2: Mode Switch -->
+            <!-- Guide Item 2: Mode Switch Flip -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="top">
+                android:gravity="center_vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="⚡"
-                    android:textSize="16sp" />
+                    android:background="@drawable/bg_chip_sample"
+                    android:text="Double Tap"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium" />
 
-                <LinearLayout
+                <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="12dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Instant Mode Switch (Double Tap)"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp"
-                        android:fontFamily="sans-serif-medium" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Double-tap the floating button anytime to instantly toggle between Voice-to-Text and Text-to-Text rewrite modes."
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:lineSpacingExtra="2dp" />
-                </LinearLayout>
+                    android:text="Smooth 3D flip card toggle between Voice-to-Text and Text-to-Text modes."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="2dp" />
             </LinearLayout>
 
             <View
@@ -638,38 +501,26 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="top">
+                android:gravity="center_vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🎛️"
-                    android:textSize="16sp" />
+                    android:background="@drawable/bg_chip_sample"
+                    android:text="Long Press"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium" />
 
-                <LinearLayout
+                <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="12dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Tone Selector (Long Press)"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp"
-                        android:fontFamily="sans-serif-medium" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Press and hold the floating pill to reveal the vertical liquid-glass tone picker (Raw, Normal, Professional)."
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:lineSpacingExtra="2dp" />
-                </LinearLayout>
+                    android:text="Summon the Tone Selector to choose Raw, Normal, or Professional style."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="2dp" />
             </LinearLayout>
 
             <View
@@ -678,90 +529,32 @@
                 android:layout_marginVertical="12dp"
                 android:background="@color/border_subtle" />
 
-            <!-- Guide Item 4: Selection Rewrite -->
+            <!-- Guide Item 4: Magnetic Dragging -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="top">
+                android:gravity="center_vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="✍️"
-                    android:textSize="16sp" />
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Selection-Aware In-Place Rewrite"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp"
-                        android:fontFamily="sans-serif-medium" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Select or highlight any text inside any app (WhatsApp, Chrome, Notes) to rewrite only that portion without overwriting the rest."
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:lineSpacingExtra="2dp" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="12dp"
-                android:background="@color/border_subtle" />
-
-            <!-- Guide Item 5: Magnetic Docking -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="top">
+                    android:background="@drawable/bg_chip_sample"
+                    android:text="Drag &amp; Snap"
+                    android:textColor="@color/text_primary"
+                    android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium" />
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🧲"
-                    android:textSize="16sp" />
-
-                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:layout_marginStart="12dp"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Magnetic Edge Snap &amp; Drag"
-                        android:textColor="@color/text_primary"
-                        android:textSize="13sp"
-                        android:fontFamily="sans-serif-medium" />
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="Press and slide the pill anywhere on screen. It smoothly locks directly above your keyboard and snaps to the nearest edge."
-                        android:textColor="@color/text_secondary"
-                        android:textSize="12sp"
-                        android:lineSpacingExtra="2dp" />
-                </LinearLayout>
+                    android:text="Press and drag to reposition. Keyflow magnetically docks above your keyboard."
+                    android:textColor="@color/text_secondary"
+                    android:textSize="12sp"
+                    android:lineSpacingExtra="2dp" />
             </LinearLayout>
-
         </LinearLayout>
 
     </LinearLayout>

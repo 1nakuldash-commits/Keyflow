@@ -15,12 +15,12 @@
         android:id="@+id/chipToneRaw"
         android:layout_width="match_parent"
         android:layout_height="38dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
         android:gravity="center_vertical|start"
         android:text="Raw"
         android:textSize="13sp"
-        android:textColor="#94A3B8"
+        android:textColor="#A1A1AA"
         android:fontFamily="sans-serif-medium"
         android:background="@drawable/bg_tone_chip_inactive"
         android:clickable="true"
@@ -29,23 +29,24 @@
     <!-- Hairline Divider -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="0.5dp"
+        android:layout_height="1dp"
         android:layout_marginHorizontal="6dp"
         android:layout_marginVertical="2dp"
-        android:background="#15FFFFFF" />
+        android:background="#161822" />
 
     <!-- Normal Mode (Natural Everyday English - Default) -->
     <TextView
         android:id="@+id/chipToneNormal"
         android:layout_width="match_parent"
         android:layout_height="38dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
         android:gravity="center_vertical|start"
         android:text="Normal"
         android:textSize="13sp"
-        android:textColor="#F8FAFC"
+        android:textColor="#000000"
         android:fontFamily="sans-serif-medium"
+        android:textStyle="bold"
         android:background="@drawable/bg_tone_chip_active"
         android:clickable="true"
         android:focusable="true" />
@@ -53,22 +54,22 @@
     <!-- Hairline Divider -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="0.5dp"
+        android:layout_height="1dp"
         android:layout_marginHorizontal="6dp"
         android:layout_marginVertical="2dp"
-        android:background="#15FFFFFF" />
+        android:background="#161822" />
 
     <!-- Professional Mode (Workplace English) -->
     <TextView
         android:id="@+id/chipToneProfessional"
         android:layout_width="match_parent"
         android:layout_height="38dp"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
         android:gravity="center_vertical|start"
         android:text="Professional"
         android:textSize="13sp"
-        android:textColor="#94A3B8"
+        android:textColor="#A1A1AA"
         android:fontFamily="sans-serif-medium"
         android:background="@drawable/bg_tone_chip_inactive"
         android:clickable="true"
