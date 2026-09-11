@@ -84,7 +84,10 @@ class RewriteAccessibilityService : AccessibilityService() {
         private const val PREF_ACTIVE_MODE = "pref_active_mode"
         private const val PREF_VOICE_TONE = "pref_voice_tone"
         private const val PREF_TEXT_TONE = "pref_text_tone"
-        private const val DEFAULT_TONE = "simple"
+        const val TONE_RAW = "raw"
+        const val TONE_NORMAL = "normal"
+        const val TONE_PROFESSIONAL = "professional"
+        private const val DEFAULT_TONE = TONE_NORMAL
 
         private const val BADGE_SIZE_DP = 44
         private const val CAPSULE_EXPANDED_WIDTH_DP = 156
@@ -1795,21 +1798,19 @@ class RewriteAccessibilityService : AccessibilityService() {
         val menuView = inflater.inflate(R.layout.overlay_tone_menu, null) ?: return
         toneMenuView = menuView
 
-        val chipSimple = menuView.findViewById<TextView>(R.id.chipToneSimple)
-        val chipFormal = menuView.findViewById<TextView>(R.id.chipToneFormal)
+        val chipRaw = menuView.findViewById<TextView>(R.id.chipToneRaw)
+        val chipNormal = menuView.findViewById<TextView>(R.id.chipToneNormal)
         val chipPro = menuView.findViewById<TextView>(R.id.chipToneProfessional)
-        val chipEmail = menuView.findViewById<TextView>(R.id.chipToneEmail)
 
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
         val tonePrefKey = if (activeMode == MODE_VOICE) PREF_VOICE_TONE else PREF_TEXT_TONE
         val currentTone = prefs.getString(tonePrefKey, DEFAULT_TONE) ?: DEFAULT_TONE
 
-        updateToneChipsHighlight(currentTone, chipSimple, chipFormal, chipPro, chipEmail)
+        updateToneChipsHighlight(currentTone, chipRaw, chipNormal, chipPro)
 
-        chipSimple?.setOnClickListener { onToneSelected("simple") }
-        chipFormal?.setOnClickListener { onToneSelected("formal") }
-        chipPro?.setOnClickListener { onToneSelected("professional") }
-        chipEmail?.setOnClickListener { onToneSelected("email") }
+        chipRaw?.setOnClickListener { onToneSelected(TONE_RAW) }
+        chipNormal?.setOnClickListener { onToneSelected(TONE_NORMAL) }
+        chipPro?.setOnClickListener { onToneSelected(TONE_PROFESSIONAL) }
 
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
@@ -1911,15 +1912,13 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     private fun updateToneChipsHighlight(
         activeTone: String,
-        chipSimple: TextView? = null,
-        chipFormal: TextView? = null,
-        chipPro: TextView? = null,
-        chipEmail: TextView? = null
+        chipRaw: TextView? = null,
+        chipNormal: TextView? = null,
+        chipPro: TextView? = null
     ) {
-        val s = chipSimple ?: toneMenuView?.findViewById(R.id.chipToneSimple) ?: return
-        val f = chipFormal ?: toneMenuView?.findViewById(R.id.chipToneFormal) ?: return
+        val r = chipRaw ?: toneMenuView?.findViewById(R.id.chipToneRaw) ?: return
+        val n = chipNormal ?: toneMenuView?.findViewById(R.id.chipToneNormal) ?: return
         val p = chipPro ?: toneMenuView?.findViewById(R.id.chipToneProfessional) ?: return
-        val e = chipEmail ?: toneMenuView?.findViewById(R.id.chipToneEmail) ?: return
 
         fun styleChip(chip: TextView, isActive: Boolean) {
             if (isActive) {
@@ -1931,10 +1930,14 @@ class RewriteAccessibilityService : AccessibilityService() {
             }
         }
 
-        styleChip(s, activeTone == "simple")
-        styleChip(f, activeTone == "formal")
-        styleChip(p, activeTone == "professional")
-        styleChip(e, activeTone == "email")
+        val normTone = activeTone.lowercase().trim()
+        val isRaw = normTone == "raw"
+        val isPro = normTone == "professional" || normTone == "formal"
+        val isNormal = !isRaw && !isPro // default normal (including "normal", "simple")
+
+        styleChip(r, isRaw)
+        styleChip(n, isNormal)
+        styleChip(p, isPro)
     }
 
     private fun onToneSelected(tone: String) {
@@ -1946,11 +1949,10 @@ class RewriteAccessibilityService : AccessibilityService() {
         btnRewrite?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
 
         val modeLabel = if (activeMode == MODE_VOICE) "Voice" else "Text"
-        val displayName = when (tone) {
-            "formal" -> "Formal"
-            "professional" -> "Professional"
-            "email" -> "Email"
-            else -> "Simple"
+        val displayName = when (tone.lowercase().trim()) {
+            "raw" -> "Raw"
+            "professional", "formal" -> "Professional"
+            else -> "Normal"
         }
         Toast.makeText(applicationContext, "Keyflow [$modeLabel]: $displayName active", Toast.LENGTH_SHORT).show()
 
