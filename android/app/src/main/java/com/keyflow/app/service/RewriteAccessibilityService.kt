@@ -125,9 +125,9 @@ class RewriteAccessibilityService : AccessibilityService() {
 
         private const val SYSTEM_PROMPT_RAW = "You are Keyflow Raw Mode. Your task is MINIMAL-EDIT text refinement.\nSTRICT RULES:\n1. Fix only obvious typos, spelling mistakes, capitalization, punctuation, spacing, accidental duplicate words, and obvious speech disfluencies (um, uh, false starts).\n2. CRITICAL: DO NOT translate. If the input is written or transcribed in Hinglish or Hindi, KEEP IT IN HINGLISH/HINDI. Never convert it into English.\n3. DO NOT rewrite, restructure, paraphrase, polish, or make it sound professional.\n4. DO NOT add, remove, or infer any information. The output must have a minimal edit distance from the input.\n5. Preserve the exact original wording, language, tone, personality, and sentence structure.\n6. Output ONLY the refined text. Never output meta-commentary, explanations, or quotation marks."
 
-        private const val SYSTEM_PROMPT_NORMAL = "You are Keyflow Normal Mode. Your task: Understand what the user is trying to say and express the exact same thing in simple, natural, fluent, human English (everyday conversational texting style, like chatting on WhatsApp or Slack).\nSTRICT RULES:\n1. If the input is in broken English, Hinglish, or Hindi mixed with English, convert it into clear, natural, everyday conversational English.\n2. DO ONLY WHAT THE USER SAID. Do not add ideas, explanations, advice, suggestions, or unnecessary detail.\n3. CRITICAL NEGATIVE CONSTRAINT: Never invent abbreviations, acronyms, or corporate jargon (e.g. NEVER output 'CS', 'suboptimal', 'necessitating comprehensive implementation improvements'). Never use unnecessarily sophisticated vocabulary.\n4. If the user asks for X, output a natural version of X, not a larger or better version of X.\n5. Preserve 100% of facts, numbers, dates, times, names, technical terms, requested actions, negations, and intent.\n6. Sound like a real person texting naturally. Do NOT use em-dashes (—).\n7. Output ONLY the final refined English text. Never output meta-commentary, apologies, or quotation marks."
+        private const val SYSTEM_PROMPT_NORMAL = "You are Keyflow Normal Mode. Your task: Understand what the user is saying and express the exact same message in clean, natural, everyday conversational English (like texting on WhatsApp or Slack).\nSTRICT RULES:\n1. If the input is in Hindi (Devanagari or Romanized), Hinglish, or broken English, translate and express it in clear, fluent, everyday conversational English.\n2. Preserve 100% of facts, quantities, numbers (e.g. '20 pieces', '500 users', '10 min'), dates, times, names, technical terms, requested actions, and negations (e.g. 'nahi', 'mat bhejna', 'do not'). Never drop or change numbers.\n3. DO ONLY WHAT THE USER SAID. Do not add ideas, explanations, advice, suggestions, or unnecessary commentary.\n4. CRITICAL NEGATIVE CONSTRAINT: Never invent abbreviations, acronyms, or corporate jargon (e.g. NEVER output 'CS', 'suboptimal', 'necessitating comprehensive improvements'). Sound like a real human texting naturally.\n5. Do NOT use em-dashes (—).\n6. Output ONLY the final refined English text. Never output meta-commentary, apologies, or quotation marks."
 
-        private const val SYSTEM_PROMPT_PROFESSIONAL = "You are Keyflow Professional Mode. Your task: Express the user's exact message in properly structured, polished, and polite professional workplace English suitable for Slack, Teams, email, or colleagues.\nSTRICT RULES:\n1. If input is in Hinglish, Hindi, or broken English, convert it into articulate, direct, and respectful workplace English.\n2. Preserve 100% of facts, dates, times, numbers, names, technical terms, requested actions, negations, and intent precisely.\n3. CRITICAL: NEVER invent information, context, acronyms, or corporate fluff not present in the user's message.\n4. Keep it concise, structured, and clear. Do not turn a simple message into an unnecessarily long message. Do NOT use em-dashes (—).\n5. Output ONLY the final polished English text. Never output meta-commentary, apologies, or quotation marks."
+        private const val SYSTEM_PROMPT_PROFESSIONAL = "You are Keyflow Professional Mode. Your task: Express the user's exact message in properly structured, polished, articulate, and polite workplace English suitable for Slack, Teams, email, or colleagues.\nSTRICT RULES:\n1. If input is in Hindi (Devanagari or Romanized), Hinglish, or broken English, translate and express it in articulate, direct, and respectful workplace English.\n2. Preserve 100% of facts, dates, times, numbers, quantities, names, technical terms, requested actions, and negations precisely.\n3. CRITICAL: NEVER invent information, context, acronyms, or corporate fluff not present in the user's message.\n4. Keep it concise, structured, and clear. Do not turn a simple message into an unnecessarily verbose essay. Do NOT use em-dashes (—).\n5. Output ONLY the final polished English text. Never output meta-commentary, apologies, or quotation marks."
 
         private val CHAT_PLACEHOLDERS = setOf(
             "message",
@@ -1425,14 +1425,14 @@ class RewriteAccessibilityService : AccessibilityService() {
                 MediaRecorder()
             }
 
-            // Direct hardware microphone input for maximum clarity across all devices
+            // Hardware voice recognition input for Acoustic Echo Cancellation (AEC) and Noise Suppression (NS)
             recorder.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 setAudioChannels(1)
-                setAudioSamplingRate(16000)
-                setAudioEncodingBitRate(64000)
+                setAudioSamplingRate(44100)
+                setAudioEncodingBitRate(128000)
                 setOutputFile(audioFile.absolutePath)
                 prepare()
                 start()
@@ -1837,8 +1837,8 @@ class RewriteAccessibilityService : AccessibilityService() {
         val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
         val baseUrl = getCleanBaseUrl(rawUrl)
 
-        // Try backend server first if valid and not pointing to known 404
-        if (!baseUrl.contains("keyflow-api.vercel.app") && baseUrl.isNotBlank()) {
+        // Try backend server first if valid URL configured
+        if (baseUrl.isNotBlank() && !baseUrl.equals("none", ignoreCase = true)) {
             try {
                 val payload = JSONObject().apply {
                     put("text", text)
@@ -1885,8 +1885,8 @@ class RewriteAccessibilityService : AccessibilityService() {
 
         val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
         val baseUrl = getCleanBaseUrl(rawUrl)
-
-        if (!baseUrl.contains("keyflow-api.vercel.app") && baseUrl.isNotBlank()) {
+        // Try backend server first if valid URL configured
+        if (baseUrl.isNotBlank() && !baseUrl.equals("none", ignoreCase = true)) {
             try {
                 val mediaType = "audio/m4a".toMediaType()
                 val requestBody = MultipartBody.Builder()

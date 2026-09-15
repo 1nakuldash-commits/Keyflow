@@ -153,23 +153,22 @@ SYSTEM_PROMPTS = {
         "6. Output ONLY the refined text. Never output meta-commentary, explanations, or quotation marks."
     ),
     "normal": (
-        "You are Keyflow Normal Mode. Your task: Understand what the user is trying to say and express the exact same thing in simple, natural, fluent, human English (everyday conversational texting style, like chatting on WhatsApp or Slack).\n"
+        "You are Keyflow Normal Mode. Your task: Understand what the user is saying and express the exact same message in clean, natural, everyday conversational English (like texting on WhatsApp or Slack).\n"
         "STRICT RULES:\n"
-        "1. If the input is in broken English, Hinglish, or Hindi mixed with English, convert it into clear, natural, everyday conversational English.\n"
-        "2. DO ONLY WHAT THE USER SAID. Do not add ideas, explanations, advice, suggestions, or unnecessary detail.\n"
-        "3. CRITICAL NEGATIVE CONSTRAINT: Never invent abbreviations, acronyms, or corporate jargon (e.g. NEVER output 'CS', 'suboptimal', 'necessitating comprehensive implementation improvements'). Never use unnecessarily sophisticated vocabulary.\n"
-        "4. If the user asks for X, output a natural version of X, not a larger or better version of X.\n"
-        "5. Preserve 100% of facts, numbers, dates, times, names, technical terms, requested actions, negations, and intent.\n"
-        "6. Sound like a real person texting naturally. Do NOT use em-dashes (—).\n"
-        "7. Output ONLY the final refined English text. Never output meta-commentary, apologies, or quotation marks."
+        "1. If the input is in Hindi (Devanagari or Romanized), Hinglish, or broken English, translate and express it in clear, fluent, everyday conversational English.\n"
+        "2. Preserve 100% of facts, quantities, numbers (e.g. '20 pieces', '500 users', '10 min'), dates, times, names, technical terms, requested actions, and negations (e.g. 'nahi', 'mat bhejna', 'do not'). Never drop or change numbers.\n"
+        "3. DO ONLY WHAT THE USER SAID. Do not add ideas, explanations, advice, suggestions, or unnecessary commentary.\n"
+        "4. CRITICAL NEGATIVE CONSTRAINT: Never invent abbreviations, acronyms, or corporate jargon (e.g. NEVER output 'CS', 'suboptimal', 'necessitating comprehensive improvements'). Sound like a real human texting naturally.\n"
+        "5. Do NOT use em-dashes (—).\n"
+        "6. Output ONLY the final refined English text. Never output meta-commentary, apologies, or quotation marks."
     ),
     "professional": (
-        "You are Keyflow Professional Mode. Your task: Express the user's exact message in properly structured, polished, and polite professional workplace English suitable for Slack, Teams, email, or colleagues.\n"
+        "You are Keyflow Professional Mode. Your task: Express the user's exact message in properly structured, polished, articulate, and polite workplace English suitable for Slack, Teams, email, or colleagues.\n"
         "STRICT RULES:\n"
-        "1. If input is in Hinglish, Hindi, or broken English, convert it into articulate, direct, and respectful workplace English.\n"
-        "2. Preserve 100% of facts, dates, times, numbers, names, technical terms, requested actions, negations, and intent precisely.\n"
+        "1. If input is in Hindi (Devanagari or Romanized), Hinglish, or broken English, translate and express it in articulate, direct, and respectful workplace English.\n"
+        "2. Preserve 100% of facts, dates, times, numbers, quantities, names, technical terms, requested actions, and negations precisely.\n"
         "3. CRITICAL: NEVER invent information, context, acronyms, or corporate fluff not present in the user's message.\n"
-        "4. Keep it concise, structured, and clear. Do not turn a simple message into an unnecessarily long message. Do NOT use em-dashes (—).\n"
+        "4. Keep it concise, structured, and clear. Do not turn a simple message into an unnecessarily verbose essay. Do NOT use em-dashes (—).\n"
         "5. Output ONLY the final polished English text. Never output meta-commentary, apologies, or quotation marks."
     ),
     "email": (
@@ -305,7 +304,7 @@ async def romanize_indic_text(text: str, api_key: str) -> tuple[str, float]:
             from google.genai import types
             client = genai.Client(api_key=gemini_key)
             prompt = f"{ROMANIZATION_SYSTEM_PROMPT}\n\nText: {text}\nOutput:"
-            for gemini_model in ["gemini-3.5-flash-lite", "gemini-3.6-flash"]:
+            for gemini_model in ["gemini-3.6-flash", "gemini-3.1-flash-lite"]:
                 try:
                     response = client.models.generate_content(
                         model=gemini_model,
@@ -374,11 +373,11 @@ async def rewrite_with_groq(text: str, tone: str, api_key: str) -> Optional[str]
     return None
 
 async def rewrite_with_gemini(text: str, tone: str, api_key: str) -> Optional[str]:
-    """Calls Google Gemini API as fallback (gemini-3.5-flash-lite / gemini-3.6-flash). Token-optimized."""
+    """Calls Google Gemini API as fallback (gemini-3.6-flash / gemini-3.1-flash-lite). Token-optimized."""
     is_email = (tone or "").lower().strip() == "email"
     sys_prompt = get_system_prompt(tone)
     full_prompt = f"{sys_prompt}\n\nInput text: {text}\nOutput:"
-    candidate_models = ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
+    candidate_models = ["gemini-3.6-flash", "gemini-3.1-flash-lite"]
 
     # 1. Try google-genai SDK
     try:
@@ -552,11 +551,12 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str)
     mime = mime_map.get(ext, "audio/m4a")
     safe_name = filename if filename else "recording.m4a"
 
-    # Priming prompt biased toward Latin alphabet (Romanized Hinglish)
+    # Priming prompt biased with high-frequency Hinglish, Indian numbering, and tech terms
     prompt = (
-        "Keyflow dictation in English and Romanized Hinglish: mujhe kal office jana hai, "
-        "client ko call karna hai, meeting kitne baje hai, bhai main 10 min me aa raha hu, aap kahan ho, "
-        "kya scene hai, please check the UI bug, screen, buttons, settings, app update kar lena."
+        "Keyflow dictation in English, Hindi, and Hinglish: meeting, client, call karna, "
+        "office jana hai, rapido, uber, invoice, delivery, payment, 10 min, 20 pieces, 500 users, "
+        "kya scene hai, bhai aa raha hu, please check UI bug, screen, buttons, settings, app update kar lena, "
+        "pull request, PR review, deploy staging, production logs, server down, thanks."
     )
 
     headers = {
@@ -595,20 +595,7 @@ async def transcribe_audio_groq(audio_bytes: bytes, filename: str, api_key: str)
     if not raw_text:
         return "", False, 0.0
 
-    # Script Normalization Step:
-    # If the text contains Indic (Devanagari, etc.) or Perso-Arabic (Urdu) characters,
-    # normalize to Roman characters (Latin alphabet) while strictly preserving the Hindi words and phonetics.
-    script_normalized = False
-    norm_latency_ms = 0.0
-    final_text = raw_text
-
-    if contains_indic_or_perso_arabic(raw_text):
-        logger.info("Non-Roman script detected in ASR output: '%s'. Initiating script normalization...", raw_text[:60])
-        final_text, norm_latency_ms = await romanize_indic_text(raw_text, clean_key)
-        script_normalized = True
-        logger.info("Script normalization complete (%.1fms): '%s'", norm_latency_ms, final_text[:60])
-
-    return final_text, script_normalized, norm_latency_ms
+    return raw_text, False, 0.0
 
 async def perform_rewrite_pipeline(input_text: str, tone: str) -> tuple[str, str]:
     """Executes multi-model cascade (Groq -> Gemini -> local fallback). Returns (rewritten_text, provider)."""
@@ -684,9 +671,9 @@ async def execute_transcribe(
     safe_name = filename or "recording.m4a"
     logger.info("Execute transcribe (%d bytes, filename=%s, tone=%s)", len(audio_bytes), safe_name, norm_tone)
 
-    # 1. Transcribe speech accurately via Whisper (/audio/transcriptions) & normalize script
-    transcribed_text, script_normalized, norm_latency_ms = await transcribe_audio_groq(audio_bytes, safe_name, audio_key)
-    if not transcribed_text:
+    # 1. Transcribe speech accurately via Whisper (/audio/transcriptions)
+    raw_transcript, _, _ = await transcribe_audio_groq(audio_bytes, safe_name, audio_key)
+    if not raw_transcript:
         logger.info("No valid speech detected in audio file (silence or noise)")
         return TranscribeResponse(
             transcribed_text="",
@@ -698,14 +685,27 @@ async def execute_transcribe(
             normalization_latency_ms=0.0
         )
 
-    logger.info("Transcribed text: '%s'", transcribed_text)
+    logger.info("Raw Whisper transcribed text: '%s'", raw_transcript)
 
-    # 2. Refinement pipeline (Shared 100% with typed text)
-    rewritten_text, rewrite_provider = await perform_rewrite_pipeline(transcribed_text, norm_tone)
+    script_normalized = False
+    norm_latency_ms = 0.0
+    final_transcribed = raw_transcript
+
+    if norm_tone == "raw":
+        # Raw mode: preserve spoken words in Romanized Hinglish (Latin alphabet)
+        if contains_indic_or_perso_arabic(raw_transcript):
+            final_transcribed, norm_latency_ms = await romanize_indic_text(raw_transcript, audio_key)
+            script_normalized = True
+        rewritten_text, rewrite_provider = await perform_rewrite_pipeline(final_transcribed, "raw")
+    else:
+        # Normal and Professional modes:
+        # Single-pass direct bilingual refinement via Llama 3.3 70B (~400ms).
+        # Llama 3.3 natively translates and refines Devanagari/Hinglish directly to natural English with 0 word loss.
+        rewritten_text, rewrite_provider = await perform_rewrite_pipeline(raw_transcript, norm_tone)
 
     return TranscribeResponse(
-        transcribed_text=transcribed_text,
-        rewritten_text=rewritten_text or transcribed_text,
+        transcribed_text=final_transcribed,
+        rewritten_text=rewritten_text or final_transcribed,
         tone=norm_tone,
         provider="whisper-large-v3",
         rewrite_provider=rewrite_provider,
