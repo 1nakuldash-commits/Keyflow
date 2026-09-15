@@ -73,7 +73,7 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "RewriteService"
-        private const val BACKEND_URL = "http://10.0.2.2:8000/rewrite"
+        private const val BACKEND_URL = ""
         private const val PREFS_KEYFLOW = "keyflow_prefs"
         private const val KEY_BACKEND_URL = "pref_backend_url"
         private const val PREF_PILL_SNAP_SIDE = "pref_pill_snap_side" // "LEFT" or "RIGHT"
@@ -283,9 +283,10 @@ class RewriteAccessibilityService : AccessibilityService() {
 
     private val okHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(false)
             .build()
     }
 
@@ -1673,6 +1674,20 @@ class RewriteAccessibilityService : AccessibilityService() {
         return clean
     }
 
+    private fun isEmulatorDevice(): Boolean {
+        val fp = Build.FINGERPRINT.lowercase()
+        val model = Build.MODEL.lowercase()
+        val brand = Build.BRAND.lowercase()
+        val device = Build.DEVICE.lowercase()
+        val hardware = Build.HARDWARE.lowercase()
+        val product = Build.PRODUCT.lowercase()
+        return fp.startsWith("generic") || fp.startsWith("unknown") ||
+               model.contains("google_sdk") || model.contains("emulator") || model.contains("droid4x") ||
+               hardware.contains("goldfish") || hardware.contains("ranchu") ||
+               product.contains("sdk") || product.contains("google_sdk") ||
+               brand.contains("generic") || device.contains("generic")
+    }
+
     private fun cleanModelOutput(raw: String): String {
         var text = raw.trim()
         // Strip think tags
@@ -1778,7 +1793,7 @@ class RewriteAccessibilityService : AccessibilityService() {
     private suspend fun requestGroqTranscribeDirectly(audioFile: File, tone: String): Pair<String, String>? = withContext(Dispatchers.IO) {
         val mediaType = "audio/m4a".toMediaType()
         val whisperModels = listOf("whisper-large-v3-turbo", "whisper-large-v3")
-        val whisperPrompt = "Keyflow dictation in English and Romanized Hinglish: mujhe kal office jana hai, client ko call karna hai, meeting kitne baje hai, bhai main 10 min me aa raha hu, aap kahan ho, kya scene hai, please check the UI bug, screen, buttons, settings, app update kar lena."
+        val whisperPrompt = "Keyflow dictation in English, Hindi, and Hinglish: meeting, client, call karna, office jana hai, rapido, uber, invoice, delivery, payment, 10 min, 20 pieces, 500 users, kya scene hai, bhai aa raha hu, please check UI bug, screen, buttons, settings, app update kar lena, pull request, PR review, deploy staging, production logs, server down, thanks."
 
         var transcribedText = ""
 
@@ -1834,11 +1849,12 @@ class RewriteAccessibilityService : AccessibilityService() {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
         val selectedTone = prefs.getString(PREF_TEXT_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
 
-        val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
+        val rawUrl = prefs.getString(KEY_BACKEND_URL, "") ?: ""
         val baseUrl = getCleanBaseUrl(rawUrl)
+        val isLocalHost = baseUrl.contains("10.0.2.2") || baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1")
 
-        // Try backend server first if valid URL configured
-        if (baseUrl.isNotBlank() && !baseUrl.equals("none", ignoreCase = true)) {
+        // Only try custom backend if explicitly configured with a valid remote URL (or running on emulator)
+        if (baseUrl.isNotBlank() && (!isLocalHost || isEmulatorDevice()) && !baseUrl.equals("none", ignoreCase = true)) {
             try {
                 val payload = JSONObject().apply {
                     put("text", text)
@@ -1883,10 +1899,12 @@ class RewriteAccessibilityService : AccessibilityService() {
         val prefs = getSharedPreferences(PREFS_KEYFLOW, Context.MODE_PRIVATE)
         val voiceTone = prefs.getString(PREF_VOICE_TONE, DEFAULT_TONE) ?: DEFAULT_TONE
 
-        val rawUrl = prefs.getString(KEY_BACKEND_URL, BACKEND_URL) ?: BACKEND_URL
+        val rawUrl = prefs.getString(KEY_BACKEND_URL, "") ?: ""
         val baseUrl = getCleanBaseUrl(rawUrl)
-        // Try backend server first if valid URL configured
-        if (baseUrl.isNotBlank() && !baseUrl.equals("none", ignoreCase = true)) {
+        val isLocalHost = baseUrl.contains("10.0.2.2") || baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1")
+
+        // Only try custom backend if explicitly configured with a valid remote URL (or running on emulator)
+        if (baseUrl.isNotBlank() && (!isLocalHost || isEmulatorDevice()) && !baseUrl.equals("none", ignoreCase = true)) {
             try {
                 val mediaType = "audio/m4a".toMediaType()
                 val requestBody = MultipartBody.Builder()
